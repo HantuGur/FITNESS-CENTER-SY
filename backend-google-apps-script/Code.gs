@@ -8,7 +8,7 @@
 // Contoh link sheet:
 // https://docs.google.com/spreadsheets/d/1ABCDEFxxxx/edit
 // Yang dipakai cuma: 1ABCDEFxxxx
-const SPREADSHEET_ID = 'PASTE_GOOGLE_SHEET_ID_HERE';
+const SPREADSHEET_ID = 'https://script.google.com/macros/s/AKfycbwJaF9lAlVP-vm3wQw2p83SX9cHuNeYlpkD7IJMHXLK6yURCYFFNH9P4gdD7lCJEGrlQQ/exec';
 
 const MAX_KEY_NUMBER = 100;
 
