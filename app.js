@@ -70,6 +70,7 @@ function getScriptUrl() {
 
 function isScriptUrlReady() {
   const url = getScriptUrl();
+
   return Boolean(
     url &&
     url !== DEFAULT_SCRIPT_PLACEHOLDER &&
@@ -130,9 +131,12 @@ function bindEvents() {
     button.addEventListener("click", () => {
       document.querySelectorAll(".tab").forEach((btn) => btn.classList.remove("active"));
       button.classList.add("active");
+
       state.activeTab = button.dataset.tab;
+
       els.searchInput.value = "";
       els.filterStatus.value = "all";
+
       renderCurrentTab();
     });
   });
@@ -181,6 +185,7 @@ function startAutoRefresh() {
     if (document.hidden) return;
     if (!isScriptUrlReady()) return;
     if (state.saving) return;
+
     loadAllData({ showLoading: false });
   }, getRefreshInterval());
 }
@@ -192,6 +197,7 @@ async function loadAllData({ showLoading = false } = {}) {
   }
 
   if (state.loading) return;
+
   state.loading = true;
 
   if (showLoading || !state.initialized) {
@@ -217,11 +223,14 @@ async function loadAllData({ showLoading = false } = {}) {
 
     updateDashboard();
     renderCurrentTab();
+
     setBackendStatus("ok", "Backend aktif");
     state.initialized = true;
+
   } catch (error) {
     setBackendStatus("bad", "Backend gagal");
     showToast(error.message || "Gagal menghubungi backend.", "bad");
+
   } finally {
     state.loading = false;
   }
@@ -256,24 +265,30 @@ function jsonpRequest(action, params = {}) {
 
     const timeout = setTimeout(() => {
       if (finished) return;
+
       finished = true;
       cleanup();
+
       reject(new Error("Backend tidak merespons. Cek deploy Apps Script."));
     }, 15000);
 
     window[callbackName] = (payload) => {
       if (finished) return;
+
       finished = true;
       clearTimeout(timeout);
       cleanup();
+
       resolve(payload || { ok: false, message: "Respons backend kosong." });
     };
 
     script.onerror = () => {
       if (finished) return;
+
       finished = true;
       clearTimeout(timeout);
       cleanup();
+
       reject(new Error("Gagal menghubungi Apps Script."));
     };
 
@@ -301,12 +316,14 @@ function handleSubmit(event) {
   };
 
   const validation = validatePayload(payload);
+
   if (!validation.ok) {
     showToast(validation.message, "warn");
     return;
   }
 
   localStorage.setItem("gymAdminName", payload.admin);
+
   submitPayload(payload);
 }
 
@@ -330,59 +347,48 @@ function validatePayload(payload) {
   return { ok: true };
 }
 
-function submitPayload(payload) {
+async function submitPayload(payload) {
   state.saving = true;
+
   els.submitBtn.disabled = true;
   els.submitBtn.textContent = "Menyimpan...";
+
   disableCheckoutButtons(true);
 
-  submitWithIframe(payload);
-}
+  try {
+    const response = await jsonpRequest("saveLog", {
+      admin: payload.admin,
+      customerName: payload.customerName || "",
+      keyNumber: payload.keyNumber,
+      status: payload.status
+    });
 
-function submitWithIframe(payload) {
-  ensurePostFrame();
+    if (!response.ok) {
+      throw new Error(response.message || "Data gagal disimpan.");
+    }
 
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = getScriptUrl();
-  form.target = "postFrame";
-  form.style.display = "none";
+    showToast(response.message || "Data berhasil disimpan.", "ok");
 
-  Object.entries(payload).forEach(([key, value]) => {
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = key;
-    input.value = value;
-    form.appendChild(input);
-  });
+    els.customerInput.value = "";
+    els.keyInput.value = "";
+    els.statusInput.value = "Masuk";
 
-  document.body.appendChild(form);
-  form.submit();
-  form.remove();
+    updateCustomerNameRequirement();
 
-  setTimeout(() => {
-    if (!state.saving) return;
+    await loadAllData({ showLoading: false });
+
+  } catch (error) {
+    showToast(error.message || "Data gagal disimpan.", "bad");
+    await loadAllData({ showLoading: false });
+
+  } finally {
     finishSavingState();
-    showToast("Backend belum mengirim respons. Cek deployment Apps Script.", "warn");
-    loadAllData({ showLoading: false });
-  }, 18000);
-}
-
-function ensurePostFrame() {
-  let frame = document.querySelector('iframe[name="postFrame"]');
-
-  if (!frame) {
-    frame = document.createElement("iframe");
-    frame.name = "postFrame";
-    frame.style.display = "none";
-    document.body.appendChild(frame);
   }
-
-  return frame;
 }
 
 function handleBackendMessage(event) {
   const data = event.data || {};
+
   if (data.source !== "sistem-gym-backend") return;
 
   const payload = data.payload || {};
@@ -395,10 +401,12 @@ function handleBackendMessage(event) {
     els.customerInput.value = "";
     els.keyInput.value = "";
     els.statusInput.value = "Masuk";
+
     updateCustomerNameRequirement();
 
     els.customerInput.focus();
     loadAllData({ showLoading: false });
+
   } else {
     showToast(payload.message || "Data gagal disimpan.", "bad");
     loadAllData({ showLoading: false });
@@ -407,8 +415,10 @@ function handleBackendMessage(event) {
 
 function finishSavingState() {
   state.saving = false;
+
   els.submitBtn.disabled = false;
   els.submitBtn.textContent = "Simpan ke Google Sheet";
+
   disableCheckoutButtons(false);
 }
 
@@ -420,6 +430,7 @@ function disableCheckoutButtons(disabled) {
 
 function handleTableAction(event) {
   const button = event.target.closest("[data-action]");
+
   if (!button) return;
 
   const action = button.dataset.action;
@@ -427,6 +438,7 @@ function handleTableAction(event) {
   if (action === "checkout") {
     const keyNumber = button.dataset.keyNumber || "";
     const customerName = button.dataset.customerName || "";
+
     quickCheckout(keyNumber, customerName);
   }
 }
@@ -513,6 +525,7 @@ function renderKeys() {
     const text = `${item.keyNumber} ${item.status} ${item.customerName} ${item.checkInTime} ${item.updatedAt}`.toLowerCase();
     const matchSearch = !q || text.includes(q);
     const matchStatus = filter === "all" || item.status === filter;
+
     return matchSearch && matchStatus;
   });
 
@@ -568,6 +581,7 @@ function renderMembers() {
     const text = `${item.memberId} ${item.memberName} ${item.status} ${item.registeredAt} ${item.createdBy} ${item.updatedAt}`.toLowerCase();
     const matchSearch = !q || text.includes(q);
     const matchStatus = filter === "all" || item.status === filter;
+
     return matchSearch && matchStatus;
   });
 
@@ -606,6 +620,7 @@ function renderLogs() {
     const text = `${item.no} ${item.waktuLengkap} ${item.tanggal} ${item.jam} ${item.nama} ${item.noKunci} ${item.status} ${item.admin}`.toLowerCase();
     const matchSearch = !q || text.includes(q);
     const matchStatus = filter === "all" || item.status === filter;
+
     return matchSearch && matchStatus;
   });
 
