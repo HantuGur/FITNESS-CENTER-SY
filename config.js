@@ -5,7 +5,7 @@
 // Contoh: https://script.google.com/macros/s/AKfycbxxxxxxxxxxxxxxxxxxxx/exec
 
 window.GYM_CONFIG = {
-  SCRIPT_URL:"https://script.google.com/macros/s/AKfycbwmOL_hVWvRxU1t7bnRtE7jMyZ-hr0DDcghS39pxtMxTpJrKxyyy2V2lyQwKeQ7LLzGLQ/exec",
+  SCRIPT_URL:"https://script.google.com/macros/s/AKfycby6xgXJi_AjpadNi-td9rkeRgb8IbPfj2j6eT4pHliMheMpuDPUyI2RfFlGeCmpmMwBhg/exec",
   APP_NAME: "Sistem Admin Gym",
   GYM_NAME: "SISTEM FC",
   REFRESH_INTERVAL_MS: 10000,
