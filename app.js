@@ -141,8 +141,6 @@ function bindEvents() {
     });
   });
 
-  window.addEventListener("message", handleBackendMessage);
-
   updateCustomerNameRequirement();
 }
 
@@ -270,7 +268,7 @@ function jsonpRequest(action, params = {}) {
       cleanup();
 
       reject(new Error("Backend tidak merespons. Cek deploy Apps Script."));
-    }, 15000);
+    }, 45000);
 
     window[callbackName] = (payload) => {
       if (finished) return;
@@ -383,33 +381,6 @@ async function submitPayload(payload) {
 
   } finally {
     finishSavingState();
-  }
-}
-
-function handleBackendMessage(event) {
-  const data = event.data || {};
-
-  if (data.source !== "sistem-gym-backend") return;
-
-  const payload = data.payload || {};
-
-  finishSavingState();
-
-  if (payload.ok) {
-    showToast(payload.message || "Data berhasil disimpan.", "ok");
-
-    els.customerInput.value = "";
-    els.keyInput.value = "";
-    els.statusInput.value = "Masuk";
-
-    updateCustomerNameRequirement();
-
-    els.customerInput.focus();
-    loadAllData({ showLoading: false });
-
-  } else {
-    showToast(payload.message || "Data gagal disimpan.", "bad");
-    loadAllData({ showLoading: false });
   }
 }
 
