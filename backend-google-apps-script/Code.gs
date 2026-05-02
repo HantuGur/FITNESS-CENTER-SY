@@ -184,20 +184,49 @@ function doPost(e) {
 
     const currentKey = getKeyRecord_(keySheet, payload.keyNumber);
 
-    if (payload.status === 'Masuk' && currentKey.status === 'Dipakai') {
-      throw new Error(
-        'Kunci ' + payload.keyNumber + ' sedang dipakai oleh ' + (currentKey.customerName || 'pelanggan lain') + '.'
-      );
+    if (payload.status === 'Masuk') {
+      if (currentKey.status === 'Dipakai') {
+        throw new Error(
+          'Kunci ' + payload.keyNumber + ' sedang dipakai oleh ' + (currentKey.customerName || 'pelanggan lain') + '.'
+        );
+      }
+
+      appendLog_(logSheet, payload);
+      updateDailyRecap_(dailySheet, payload);
+      updateKey_(keySheet, payload);
+
+      return respondPostMessage_({
+        ok: true,
+        message: 'Data masuk berhasil disimpan untuk kunci ' + payload.keyNumber + '.'
+      });
     }
 
-    appendLog_(logSheet, payload);
-    updateDailyRecap_(dailySheet, payload);
-    updateKey_(keySheet, payload);
+    if (payload.status === 'Keluar') {
+      if (currentKey.status !== 'Dipakai') {
+        throw new Error(
+          'Kunci ' + payload.keyNumber + ' belum tercatat sedang dipakai, jadi tidak bisa checkout.'
+        );
+      }
 
-    return respondPostMessage_({
-      ok: true,
-      message: 'Data ' + payload.status.toLowerCase() + ' berhasil disimpan untuk kunci ' + payload.keyNumber + '.'
-    });
+      const checkoutPayload = {
+        admin: payload.admin,
+        customerName: currentKey.customerName || payload.customerName,
+        keyNumber: payload.keyNumber,
+        status: payload.status,
+        timestamp: payload.timestamp
+      };
+
+      updateDailyRecap_(dailySheet, checkoutPayload);
+      appendLog_(logSheet, checkoutPayload);
+      updateKey_(keySheet, checkoutPayload);
+
+      return respondPostMessage_({
+        ok: true,
+        message: 'Data keluar berhasil disimpan untuk kunci ' + payload.keyNumber + '.'
+      });
+    }
+
+    throw new Error('Status tidak valid.');
 
   } catch (error) {
     return respondPostMessage_({
@@ -415,15 +444,14 @@ function appendDailyCheckIn_(sheet, payload) {
 function markDailyCheckout_(sheet, payload) {
   const timestamp = payload.timestamp || new Date();
 
-  const tanggal = formatDate_(timestamp);
   const jamKeluar = formatTime_(timestamp);
   const waktuKeluarLengkap = formatDateTime_(timestamp);
 
-  const rowIndex = findOpenDailyRow_(sheet, tanggal, payload.keyNumber);
+  const rowIndex = findOpenDailyRow_(sheet, payload.keyNumber);
 
   if (!rowIndex) {
     throw new Error(
-      'Data masuk untuk kunci ' + payload.keyNumber + ' hari ini belum ditemukan atau sudah checkout.'
+      'Baris masuk untuk kunci ' + payload.keyNumber + ' belum ditemukan di REKAP_HARIAN atau sudah pernah checkout.'
     );
   }
 
@@ -434,7 +462,7 @@ function markDailyCheckout_(sheet, payload) {
   sheet.getRange(rowIndex, 11).setValue(payload.admin);
 }
 
-function findOpenDailyRow_(sheet, tanggal, keyNumber) {
+function findOpenDailyRow_(sheet, keyNumber) {
   const lastRow = sheet.getLastRow();
 
   if (lastRow < 2) {
@@ -446,14 +474,10 @@ function findOpenDailyRow_(sheet, tanggal, keyNumber) {
   for (let i = values.length - 1; i >= 0; i--) {
     const row = values[i];
 
-    const rowTanggal = stringifyCell_(row[0]);
     const rowKunci = normalizeKeyNumber_(row[3]) || cleanText_(row[3]);
     const sudahKeluar = row[8] === true;
 
-    const sameDate = rowTanggal === tanggal;
-    const sameKey = rowKunci === keyNumber;
-
-    if (sameDate && sameKey && !sudahKeluar) {
+    if (rowKunci === keyNumber && !sudahKeluar) {
       return i + 2;
     }
   }
