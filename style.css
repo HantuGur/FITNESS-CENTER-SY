@@ -28,7 +28,9 @@ body {
   min-height: 100vh;
 }
 
-button, input, select {
+button,
+input,
+select {
   font: inherit;
 }
 
@@ -58,7 +60,7 @@ button, input, select {
   width: 260px;
   height: 260px;
   border-radius: 999px;
-  background: rgba(255,255,255,.13);
+  background: rgba(255, 255, 255, .13);
   position: absolute;
   right: -70px;
   top: -90px;
@@ -82,7 +84,8 @@ button, input, select {
   color: #bfdbfe;
 }
 
-h1, h2 {
+h1,
+h2 {
   margin: 0;
   line-height: 1.1;
 }
@@ -99,14 +102,14 @@ h2 {
 
 .subtitle {
   margin: 12px 0 0;
-  color: rgba(255,255,255,.82);
+  color: rgba(255, 255, 255, .82);
   font-size: 16px;
   max-width: 680px;
 }
 
 .hero-status {
-  background: rgba(255,255,255,.12);
-  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255, 255, 255, .12);
+  border: 1px solid rgba(255, 255, 255, .18);
   backdrop-filter: blur(18px);
   border-radius: 26px;
   padding: 18px 20px;
@@ -120,7 +123,7 @@ h2 {
 }
 
 .date {
-  color: rgba(255,255,255,.78);
+  color: rgba(255, 255, 255, .78);
   margin-top: 4px;
 }
 
@@ -129,18 +132,18 @@ h2 {
   margin-top: 14px;
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(255,255,255,.16);
+  background: rgba(255, 255, 255, .16);
   color: white;
   font-size: 13px;
   font-weight: 900;
 }
 
 .backend-pill.ok {
-  background: rgba(34,197,94,.25);
+  background: rgba(34, 197, 94, .25);
 }
 
 .backend-pill.bad {
-  background: rgba(239,68,68,.25);
+  background: rgba(239, 68, 68, .25);
 }
 
 .grid-main {
@@ -151,14 +154,15 @@ h2 {
 }
 
 .card {
-  background: rgba(255,255,255,.92);
-  border: 1px solid rgba(226,232,240,.9);
+  background: rgba(255, 255, 255, .92);
+  border: 1px solid rgba(226, 232, 240, .9);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 26px;
 }
 
-.section-head, .monitor-head {
+.section-head,
+.monitor-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -182,7 +186,8 @@ label {
   font-weight: 900;
 }
 
-input, select {
+input,
+select {
   width: 100%;
   border: 1px solid var(--line);
   background: #fbfdff;
@@ -193,12 +198,15 @@ input, select {
   transition: .18s ease;
 }
 
-input:focus, select:focus {
+input:focus,
+select:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 5px rgba(37,99,235,.12);
+  box-shadow: 0 0 0 5px rgba(37, 99, 235, .12);
 }
 
-.primary-btn, .ghost-btn, .tab {
+.primary-btn,
+.ghost-btn,
+.tab {
   border: 0;
   cursor: pointer;
   font-weight: 950;
@@ -211,7 +219,7 @@ input:focus, select:focus {
   padding: 18px 20px;
   color: white;
   background: linear-gradient(135deg, var(--primary), #0ea5e9);
-  box-shadow: 0 16px 30px rgba(37,99,235,.24);
+  box-shadow: 0 16px 30px rgba(37, 99, 235, .24);
 }
 
 .primary-btn:hover {
@@ -277,9 +285,17 @@ input:focus, select:focus {
   letter-spacing: -0.06em;
 }
 
-.stat-item.danger strong { color: var(--danger); }
-.stat-item.success strong { color: var(--success); }
-.stat-item.purple strong { color: var(--purple); }
+.stat-item.danger strong {
+  color: var(--danger);
+}
+
+.stat-item.success strong {
+  color: var(--success);
+}
+
+.stat-item.purple strong {
+  color: var(--purple);
+}
 
 .refresh-note {
   margin: 18px 0 0;
@@ -310,7 +326,7 @@ input:focus, select:focus {
 }
 
 code {
-  background: rgba(15,23,42,.08);
+  background: rgba(15, 23, 42, .08);
   border-radius: 8px;
   padding: 2px 7px;
 }
@@ -337,7 +353,7 @@ code {
 .tab.active {
   background: var(--primary);
   color: white;
-  box-shadow: 0 10px 24px rgba(37,99,235,.24);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, .24);
 }
 
 .toolbar {
@@ -360,7 +376,8 @@ table {
   background: white;
 }
 
-th, td {
+th,
+td {
   padding: 14px 16px;
   text-align: left;
   border-bottom: 1px solid var(--line);
@@ -388,14 +405,50 @@ tr:last-child td {
   font-size: 12px;
 }
 
-.badge.used, .badge.in {
+.badge.used,
+.badge.in {
   background: #fee2e2;
   color: #991b1b;
 }
 
-.badge.empty, .badge.out {
+.badge.empty,
+.badge.out {
   background: #dcfce7;
   color: #166534;
+}
+
+/* Tombol Keluar di tabel Daftar Kunci */
+.checkout-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 900;
+  cursor: pointer;
+  background: #fee2e2;
+  color: #991b1b;
+  transition: 0.18s ease;
+  box-shadow: 0 8px 18px rgba(220, 38, 38, 0.12);
+}
+
+.checkout-btn:hover {
+  background: #fecaca;
+  transform: translateY(-1px);
+}
+
+.checkout-btn:active {
+  transform: translateY(0);
+}
+
+.checkout-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.muted {
+  color: #94a3b8;
+  font-weight: 800;
 }
 
 .empty-state {
@@ -419,11 +472,20 @@ tr:last-child td {
   z-index: 50;
 }
 
-.toast.ok { background: #15803d; }
-.toast.bad { background: #dc2626; }
-.toast.warn { background: #c2410c; }
+.toast.ok {
+  background: #15803d;
+}
 
-.hidden, .hidden-frame {
+.toast.bad {
+  background: #dc2626;
+}
+
+.toast.warn {
+  background: #c2410c;
+}
+
+.hidden,
+.hidden-frame {
   display: none !important;
 }
 
@@ -433,7 +495,10 @@ tr:last-child td {
     padding-top: 12px;
   }
 
-  .hero, .grid-main, .form-row, .toolbar {
+  .hero,
+  .grid-main,
+  .form-row,
+  .toolbar {
     grid-template-columns: 1fr;
   }
 
@@ -450,7 +515,8 @@ tr:last-child td {
     display: grid;
   }
 
-  .section-head, .monitor-head {
+  .section-head,
+  .monitor-head {
     align-items: stretch;
     flex-direction: column;
   }
@@ -486,7 +552,8 @@ tr:last-child td {
     font-size: 36px;
   }
 
-  input, select {
+  input,
+  select {
     padding: 14px;
   }
 }
