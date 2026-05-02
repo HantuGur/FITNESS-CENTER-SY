@@ -4,9 +4,6 @@
    =============================== */
 
 // WAJIB: Isi cuma ID Google Sheet, bukan link full dan bukan link Apps Script.
-// Dari link:
-// https://docs.google.com/spreadsheets/d/1J4YOaOLhwZ2fb4CpWUSMct8TnGX6oxfU5EO5tyG3AZw/edit
-// yang dipakai cuma bagian ini:
 const SPREADSHEET_ID = '1J4YOaOLhwZ2fb4CpWUSMct8TnGX6oxfU5EO5tyG3AZw';
 
 const TIMEZONE = 'Asia/Jakarta';
@@ -52,8 +49,11 @@ const DAILY_HEADERS = [
   'Nama',
   'No Kunci',
   'Jam Masuk',
-  'Waktu Lengkap',
-  'Admin'
+  'Waktu Masuk Lengkap',
+  'Admin',
+  'Jam Keluar',
+  'Sudah Keluar',
+  'Waktu Keluar Lengkap'
 ];
 
 function setupGymSheets() {
@@ -67,9 +67,10 @@ function setupGymSheets() {
   setupHeader_(logSheet, LOG_HEADERS);
   setupHeader_(keySheet, KEY_HEADERS);
   setupHeader_(memberSheet, MEMBER_HEADERS);
-  setupHeader_(dailySheet, DAILY_HEADERS);
+  setupDailyHeader_(dailySheet);
 
   seedKeys_(keySheet, MAX_KEY_NUMBER);
+  setupDailyCheckboxes_(dailySheet);
 
   logSheet.setFrozenRows(1);
   keySheet.setFrozenRows(1);
@@ -175,9 +176,10 @@ function doPost(e) {
 
     setupHeader_(logSheet, LOG_HEADERS);
     setupHeader_(keySheet, KEY_HEADERS);
-    setupHeader_(dailySheet, DAILY_HEADERS);
+    setupDailyHeader_(dailySheet);
 
     seedKeys_(keySheet, MAX_KEY_NUMBER);
+    setupDailyCheckboxes_(dailySheet);
 
     const currentKey = getKeyRecord_(keySheet, payload.keyNumber);
 
@@ -188,7 +190,7 @@ function doPost(e) {
     }
 
     appendLog_(logSheet, payload);
-    appendDailyRecap_(dailySheet, payload);
+    updateDailyRecap_(dailySheet, payload);
     updateKey_(keySheet, payload);
 
     return respondPostMessage_({
@@ -253,6 +255,22 @@ function setupHeader_(sheet, headers) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     styleHeader_(sheet, headers.length);
   }
+}
+
+function setupDailyHeader_(sheet) {
+  sheet.getRange(1, 1, 1, DAILY_HEADERS.length).setValues([DAILY_HEADERS]);
+  styleHeader_(sheet, DAILY_HEADERS.length);
+  sheet.setFrozenRows(1);
+}
+
+function setupDailyCheckboxes_(sheet) {
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return;
+  }
+
+  sheet.getRange(2, 9, lastRow - 1, 1).insertCheckboxes();
 }
 
 function styleHeader_(sheet, length) {
@@ -351,15 +369,26 @@ function appendLog_(sheet, payload) {
   ]);
 }
 
-function appendDailyRecap_(sheet, payload) {
-  if (payload.status !== 'Masuk') return;
+function updateDailyRecap_(sheet, payload) {
+  setupDailyHeader_(sheet);
+  setupDailyCheckboxes_(sheet);
 
-  setupHeader_(sheet, DAILY_HEADERS);
+  if (payload.status === 'Masuk') {
+    appendDailyCheckIn_(sheet, payload);
+    return;
+  }
 
+  if (payload.status === 'Keluar') {
+    markDailyCheckout_(sheet, payload);
+  }
+}
+
+function appendDailyCheckIn_(sheet, payload) {
   const timestamp = payload.timestamp || new Date();
+
   const tanggal = formatDate_(timestamp);
   const jamMasuk = formatTime_(timestamp);
-  const waktuLengkap = formatDateTime_(timestamp);
+  const waktuMasukLengkap = formatDateTime_(timestamp);
   const nomorHarian = getNextDailyNumber_(sheet, tanggal);
 
   sheet.appendRow([
@@ -368,9 +397,85 @@ function appendDailyRecap_(sheet, payload) {
     payload.customerName,
     payload.keyNumber,
     jamMasuk,
-    waktuLengkap,
-    payload.admin
+    waktuMasukLengkap,
+    payload.admin,
+    '',
+    false,
+    ''
   ]);
+
+  const rowIndex = sheet.getLastRow();
+
+  sheet.getRange(rowIndex, 9).insertCheckboxes();
+  sheet.getRange(rowIndex, 9).setValue(false);
+}
+
+function markDailyCheckout_(sheet, payload) {
+  const timestamp = payload.timestamp || new Date();
+
+  const tanggal = formatDate_(timestamp);
+  const jamKeluar = formatTime_(timestamp);
+  const waktuKeluarLengkap = formatDateTime_(timestamp);
+
+  const rowIndex = findOpenDailyRow_(sheet, tanggal, payload.keyNumber, payload.customerName);
+
+  if (!rowIndex) {
+    const nomorHarian = getNextDailyNumber_(sheet, tanggal);
+
+    sheet.appendRow([
+      tanggal,
+      nomorHarian,
+      payload.customerName,
+      payload.keyNumber,
+      '',
+      '',
+      payload.admin,
+      jamKeluar,
+      true,
+      waktuKeluarLengkap
+    ]);
+
+    const newRowIndex = sheet.getLastRow();
+
+    sheet.getRange(newRowIndex, 9).insertCheckboxes();
+    sheet.getRange(newRowIndex, 9).setValue(true);
+
+    return;
+  }
+
+  sheet.getRange(rowIndex, 8).setValue(jamKeluar);
+  sheet.getRange(rowIndex, 9).insertCheckboxes();
+  sheet.getRange(rowIndex, 9).setValue(true);
+  sheet.getRange(rowIndex, 10).setValue(waktuKeluarLengkap);
+}
+
+function findOpenDailyRow_(sheet, tanggal, keyNumber, customerName) {
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return null;
+  }
+
+  const values = sheet.getRange(2, 1, lastRow - 1, DAILY_HEADERS.length).getValues();
+
+  for (let i = values.length - 1; i >= 0; i--) {
+    const row = values[i];
+
+    const rowTanggal = stringifyCell_(row[0]);
+    const rowNama = cleanText_(row[2]).toLowerCase();
+    const rowKunci = normalizeKeyNumber_(row[3]) || cleanText_(row[3]);
+    const sudahKeluar = row[8] === true;
+
+    const sameDate = rowTanggal === tanggal;
+    const sameKey = rowKunci === keyNumber;
+    const sameName = rowNama === cleanText_(customerName).toLowerCase();
+
+    if (sameDate && sameKey && sameName && !sudahKeluar) {
+      return i + 2;
+    }
+  }
+
+  return null;
 }
 
 function getNextDailyNumber_(sheet, tanggal) {
@@ -583,7 +688,8 @@ function getDailyRecap_() {
   const ss = getSpreadsheet_();
   const sheet = getOrCreateSheet_(ss, SHEET_DAILY);
 
-  setupHeader_(sheet, DAILY_HEADERS);
+  setupDailyHeader_(sheet);
+  setupDailyCheckboxes_(sheet);
 
   const lastRow = sheet.getLastRow();
 
@@ -601,8 +707,11 @@ function getDailyRecap_() {
         nama: cleanText_(row[2]),
         noKunci: normalizeKeyNumber_(row[3]) || cleanText_(row[3]),
         jamMasuk: stringifyCell_(row[4]),
-        waktuLengkap: stringifyCell_(row[5]),
-        admin: cleanText_(row[6])
+        waktuMasukLengkap: stringifyCell_(row[5]),
+        admin: cleanText_(row[6]),
+        jamKeluar: stringifyCell_(row[7]),
+        sudahKeluar: row[8] === true,
+        waktuKeluarLengkap: stringifyCell_(row[9])
       };
     })
     .filter(function (item) {
