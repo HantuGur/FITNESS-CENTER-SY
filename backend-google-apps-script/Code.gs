@@ -210,9 +210,9 @@ function doPost(e) {
 
       const checkoutPayload = {
         admin: payload.admin,
-        customerName: currentKey.customerName || payload.customerName,
+        customerName: currentKey.customerName || payload.customerName || 'Tanpa Nama',
         keyNumber: payload.keyNumber,
-        status: payload.status,
+        status: 'Keluar',
         timestamp: payload.timestamp
       };
 
@@ -344,10 +344,21 @@ function normalizePayload_(params) {
   const keyNumber = normalizeKeyNumber_(params.keyNumber || params.noKunci || params.nomorKunci);
   const status = normalizeStatus_(params.status);
 
-  if (!admin) throw new Error('Nama admin/pegawai wajib diisi.');
-  if (!customerName) throw new Error('Nama pelanggan wajib diisi.');
-  if (!keyNumber) throw new Error('Nomor kunci wajib diisi.');
-  if (!status) throw new Error('Status tidak valid.');
+  if (!admin) {
+    throw new Error('Nama admin/pegawai wajib diisi.');
+  }
+
+  if (!keyNumber) {
+    throw new Error('Nomor kunci wajib diisi.');
+  }
+
+  if (!status) {
+    throw new Error('Status tidak valid.');
+  }
+
+  if (status === 'Masuk' && !customerName) {
+    throw new Error('Nama pelanggan wajib diisi untuk check-in.');
+  }
 
   return {
     admin: admin,
