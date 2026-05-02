@@ -15,6 +15,16 @@ const MAX_KEY_NUMBER = 100;
 const SHEET_LOG = 'LOG_GYM';
 const SHEET_KEYS = 'DATA_KUNCI';
 const SHEET_MEMBERS = 'MEMBER_LIFETIME';
+const SHEET_DAILY = 'REKAP_HARIAN';
+
+const DAILY_HEADERS = [
+  'Tanggal',
+  'No',
+  'Nama',
+  'No Kunci',
+  'Jam Masuk',
+  'Admin'
+];
 
 const LOG_HEADERS = [
   'No',
