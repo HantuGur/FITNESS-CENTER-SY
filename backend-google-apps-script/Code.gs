@@ -3,12 +3,13 @@
    Google Apps Script + Google Sheet
    =============================== */
 
-// PENTING:
-// Isi cuma ID spreadsheet, jangan pakai /edit?gid=...
-// Contoh link sheet:
-// https://docs.google.com/spreadsheets/d/1ABCDEFxxxx/edit
-// Yang dipakai cuma: 1ABCDEFxxxx
-const SPREADSHEET_ID = 'https://script.google.com/macros/s/AKfycbwJaF9lAlVP-vm3wQw2p83SX9cHuNeYlpkD7IJMHXLK6yURCYFFNH9P4gdD7lCJEGrlQQ/exec';
+// WAJIB: Isi cuma ID Google Sheet, bukan link full dan bukan link Apps Script.
+// Dari link:
+// https://docs.google.com/spreadsheets/d/1J4YOaOLhwZ2fb4CpWUSMct8TnGX6oxfU5EO5tyG3AZw/edit
+// yang dipakai cuma bagian ini:
+const SPREADSHEET_ID = '1J4YOaOLhwZ2fb4CpWUSMct8TnGX6oxfU5EO5tyG3AZw';
+
+const TIMEZONE = 'Asia/Jakarta';
 
 const MAX_KEY_NUMBER = 100;
 
@@ -16,15 +17,6 @@ const SHEET_LOG = 'LOG_GYM';
 const SHEET_KEYS = 'DATA_KUNCI';
 const SHEET_MEMBERS = 'MEMBER_LIFETIME';
 const SHEET_DAILY = 'REKAP_HARIAN';
-
-const DAILY_HEADERS = [
-  'Tanggal',
-  'No',
-  'Nama',
-  'No Kunci',
-  'Jam Masuk',
-  'Admin'
-];
 
 const LOG_HEADERS = [
   'No',
@@ -54,27 +46,42 @@ const MEMBER_HEADERS = [
   'Update Terakhir'
 ];
 
+const DAILY_HEADERS = [
+  'Tanggal',
+  'No',
+  'Nama',
+  'No Kunci',
+  'Jam Masuk',
+  'Waktu Lengkap',
+  'Admin'
+];
+
 function setupGymSheets() {
   const ss = getSpreadsheet_();
 
   const logSheet = getOrCreateSheet_(ss, SHEET_LOG);
   const keySheet = getOrCreateSheet_(ss, SHEET_KEYS);
   const memberSheet = getOrCreateSheet_(ss, SHEET_MEMBERS);
+  const dailySheet = getOrCreateSheet_(ss, SHEET_DAILY);
 
   setupHeader_(logSheet, LOG_HEADERS);
   setupHeader_(keySheet, KEY_HEADERS);
   setupHeader_(memberSheet, MEMBER_HEADERS);
+  setupHeader_(dailySheet, DAILY_HEADERS);
+
   seedKeys_(keySheet, MAX_KEY_NUMBER);
 
   logSheet.setFrozenRows(1);
   keySheet.setFrozenRows(1);
   memberSheet.setFrozenRows(1);
+  dailySheet.setFrozenRows(1);
 
   autoResize_(logSheet, LOG_HEADERS.length);
   autoResize_(keySheet, KEY_HEADERS.length);
   autoResize_(memberSheet, MEMBER_HEADERS.length);
+  autoResize_(dailySheet, DAILY_HEADERS.length);
 
-  return 'Setup selesai. Sheet LOG_GYM, DATA_KUNCI, dan MEMBER_LIFETIME siap dipakai.';
+  return 'Setup selesai. Sheet LOG_GYM, DATA_KUNCI, MEMBER_LIFETIME, dan REKAP_HARIAN siap dipakai.';
 }
 
 function doGet(e) {
@@ -120,10 +127,19 @@ function doGet(e) {
       });
     }
 
+    if (action === 'daily') {
+      return respondJson_(params.callback, {
+        ok: true,
+        message: 'Data rekap harian berhasil diambil.',
+        data: getDailyRecap_()
+      });
+    }
+
     return respondJson_(params.callback, {
       ok: false,
       message: 'Action tidak dikenal: ' + action
     });
+
   } catch (error) {
     return respondJson_(params.callback, {
       ok: false,
@@ -152,11 +168,15 @@ function doPost(e) {
     const payload = normalizePayload_(params);
 
     const ss = getSpreadsheet_();
+
     const logSheet = getOrCreateSheet_(ss, SHEET_LOG);
     const keySheet = getOrCreateSheet_(ss, SHEET_KEYS);
+    const dailySheet = getOrCreateSheet_(ss, SHEET_DAILY);
 
     setupHeader_(logSheet, LOG_HEADERS);
     setupHeader_(keySheet, KEY_HEADERS);
+    setupHeader_(dailySheet, DAILY_HEADERS);
+
     seedKeys_(keySheet, MAX_KEY_NUMBER);
 
     const currentKey = getKeyRecord_(keySheet, payload.keyNumber);
@@ -168,17 +188,20 @@ function doPost(e) {
     }
 
     appendLog_(logSheet, payload);
+    appendDailyRecap_(dailySheet, payload);
     updateKey_(keySheet, payload);
 
     return respondPostMessage_({
       ok: true,
       message: 'Data ' + payload.status.toLowerCase() + ' berhasil disimpan untuk kunci ' + payload.keyNumber + '.'
     });
+
   } catch (error) {
     return respondPostMessage_({
       ok: false,
       message: error.message || String(error)
     });
+
   } finally {
     if (locked) lock.releaseLock();
   }
@@ -189,8 +212,12 @@ function ensureReady_() {
     throw new Error('SPREADSHEET_ID belum diisi di Code.gs.');
   }
 
-  if (String(SPREADSHEET_ID).includes('/edit')) {
-    throw new Error('SPREADSHEET_ID salah. Isi cuma ID spreadsheet, bukan link full.');
+  if (
+    String(SPREADSHEET_ID).includes('/edit') ||
+    String(SPREADSHEET_ID).includes('docs.google.com') ||
+    String(SPREADSHEET_ID).includes('script.google.com')
+  ) {
+    throw new Error('SPREADSHEET_ID salah. Isi cuma ID Google Sheet, bukan link full dan bukan URL Apps Script.');
   }
 }
 
@@ -314,7 +341,7 @@ function appendLog_(sheet, payload) {
 
   sheet.appendRow([
     no,
-    timestamp,
+    formatDateTime_(timestamp),
     formatDate_(timestamp),
     formatTime_(timestamp),
     payload.customerName,
@@ -322,6 +349,50 @@ function appendLog_(sheet, payload) {
     payload.status,
     payload.admin
   ]);
+}
+
+function appendDailyRecap_(sheet, payload) {
+  if (payload.status !== 'Masuk') return;
+
+  setupHeader_(sheet, DAILY_HEADERS);
+
+  const timestamp = payload.timestamp || new Date();
+  const tanggal = formatDate_(timestamp);
+  const jamMasuk = formatTime_(timestamp);
+  const waktuLengkap = formatDateTime_(timestamp);
+  const nomorHarian = getNextDailyNumber_(sheet, tanggal);
+
+  sheet.appendRow([
+    tanggal,
+    nomorHarian,
+    payload.customerName,
+    payload.keyNumber,
+    jamMasuk,
+    waktuLengkap,
+    payload.admin
+  ]);
+}
+
+function getNextDailyNumber_(sheet, tanggal) {
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return 1;
+  }
+
+  const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+
+  let count = 0;
+
+  values.forEach(function (row) {
+    const rowTanggal = stringifyCell_(row[0]);
+
+    if (rowTanggal === tanggal) {
+      count++;
+    }
+  });
+
+  return count + 1;
 }
 
 function updateKey_(sheet, payload) {
@@ -508,6 +579,38 @@ function getLogs_() {
     .reverse();
 }
 
+function getDailyRecap_() {
+  const ss = getSpreadsheet_();
+  const sheet = getOrCreateSheet_(ss, SHEET_DAILY);
+
+  setupHeader_(sheet, DAILY_HEADERS);
+
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) return [];
+
+  const numberOfRows = Math.min(lastRow - 1, 200);
+  const startRow = Math.max(2, lastRow - numberOfRows + 1);
+  const values = sheet.getRange(startRow, 1, numberOfRows, DAILY_HEADERS.length).getValues();
+
+  return values
+    .map(function (row) {
+      return {
+        tanggal: stringifyCell_(row[0]),
+        no: row[1],
+        nama: cleanText_(row[2]),
+        noKunci: normalizeKeyNumber_(row[3]) || cleanText_(row[3]),
+        jamMasuk: stringifyCell_(row[4]),
+        waktuLengkap: stringifyCell_(row[5]),
+        admin: cleanText_(row[6])
+      };
+    })
+    .filter(function (item) {
+      return item.nama || item.noKunci;
+    })
+    .reverse();
+}
+
 function cleanHeader_(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -538,15 +641,15 @@ function stringifyCell_(value) {
 }
 
 function formatDate_(date) {
-  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'dd/MM/yyyy');
+  return Utilities.formatDate(date, TIMEZONE, 'dd/MM/yyyy');
 }
 
 function formatTime_(date) {
-  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'HH:mm:ss');
+  return Utilities.formatDate(date, TIMEZONE, 'HH:mm:ss');
 }
 
 function formatDateTime_(date) {
-  return Utilities.formatDate(date, Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss');
+  return Utilities.formatDate(date, TIMEZONE, 'dd/MM/yyyy HH:mm:ss');
 }
 
 function autoResize_(sheet, length) {
