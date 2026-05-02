@@ -11,7 +11,8 @@ const state = {
   logs: [],
   activeTab: "keys",
   loading: false,
-  initialized: false
+  initialized: false,
+  saving: false
 };
 
 const els = {};
@@ -64,13 +65,17 @@ function getConfig() {
 }
 
 function getScriptUrl() {
-  const url = String(getConfig().SCRIPT_URL || "").trim();
-  return url;
+  return String(getConfig().SCRIPT_URL || "").trim();
 }
 
 function isScriptUrlReady() {
   const url = getScriptUrl();
-  return Boolean(url && url !== DEFAULT_SCRIPT_PLACEHOLDER && url.includes("script.google.com") && url.endsWith("/exec"));
+  return Boolean(
+    url &&
+    url !== DEFAULT_SCRIPT_PLACEHOLDER &&
+    url.includes("script.google.com") &&
+    url.endsWith("/exec")
+  );
 }
 
 function getRefreshInterval() {
@@ -105,6 +110,7 @@ function bindEvents() {
     els.customerInput.value = "";
     els.keyInput.value = "";
     els.statusInput.value = "Masuk";
+    updateCustomerNameRequirement();
     els.customerInput.focus();
   });
 
@@ -112,9 +118,13 @@ function bindEvents() {
     localStorage.setItem("gymAdminName", els.adminInput.value.trim());
   });
 
+  els.statusInput.addEventListener("change", updateCustomerNameRequirement);
+
   els.refreshBtn.addEventListener("click", () => loadAllData({ showLoading: true }));
   els.searchInput.addEventListener("input", renderCurrentTab);
   els.filterStatus.addEventListener("change", renderCurrentTab);
+
+  els.tableBody.addEventListener("click", handleTableAction);
 
   document.querySelectorAll(".tab").forEach((button) => {
     button.addEventListener("click", () => {
@@ -128,6 +138,20 @@ function bindEvents() {
   });
 
   window.addEventListener("message", handleBackendMessage);
+
+  updateCustomerNameRequirement();
+}
+
+function updateCustomerNameRequirement() {
+  const status = String(els.statusInput.value || "").trim();
+
+  if (status === "Keluar") {
+    els.customerInput.required = false;
+    els.customerInput.placeholder = "Boleh kosong kalau status Keluar";
+  } else {
+    els.customerInput.required = true;
+    els.customerInput.placeholder = "Contoh: Budi Santoso";
+  }
 }
 
 function startClock() {
@@ -137,6 +161,7 @@ function startClock() {
 
 function updateClock() {
   const now = new Date();
+
   els.clockText.textContent = now.toLocaleTimeString("id-ID", {
     hour: "2-digit",
     minute: "2-digit",
@@ -155,6 +180,7 @@ function startAutoRefresh() {
   setInterval(() => {
     if (document.hidden) return;
     if (!isScriptUrlReady()) return;
+    if (state.saving) return;
     loadAllData({ showLoading: false });
   }, getRefreshInterval());
 }
@@ -212,6 +238,7 @@ function jsonpRequest(action, params = {}) {
 
     const callbackName = `__gymCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const url = new URL(scriptUrl);
+
     url.searchParams.set("action", action);
     url.searchParams.set("callback", callbackName);
 
@@ -258,6 +285,8 @@ function jsonpRequest(action, params = {}) {
 function handleSubmit(event) {
   event.preventDefault();
 
+  if (state.saving) return;
+
   if (!isScriptUrlReady()) {
     showToast("SCRIPT_URL belum benar di config.js.", "bad");
     return;
@@ -271,20 +300,48 @@ function handleSubmit(event) {
     status: els.statusInput.value
   };
 
-  if (!payload.admin || !payload.customerName || !payload.keyNumber) {
-    showToast("Admin, nama pelanggan, dan nomor kunci wajib diisi.", "warn");
+  const validation = validatePayload(payload);
+  if (!validation.ok) {
+    showToast(validation.message, "warn");
     return;
   }
 
   localStorage.setItem("gymAdminName", payload.admin);
+  submitPayload(payload);
+}
 
+function validatePayload(payload) {
+  if (!payload.admin) {
+    return { ok: false, message: "Nama admin/pegawai wajib diisi." };
+  }
+
+  if (!payload.keyNumber) {
+    return { ok: false, message: "Nomor kunci wajib diisi." };
+  }
+
+  if (!payload.status) {
+    return { ok: false, message: "Status wajib dipilih." };
+  }
+
+  if (payload.status === "Masuk" && !payload.customerName) {
+    return { ok: false, message: "Nama pelanggan wajib diisi untuk check-in." };
+  }
+
+  return { ok: true };
+}
+
+function submitPayload(payload) {
+  state.saving = true;
   els.submitBtn.disabled = true;
   els.submitBtn.textContent = "Menyimpan...";
+  disableCheckoutButtons(true);
 
   submitWithIframe(payload);
 }
 
 function submitWithIframe(payload) {
+  ensurePostFrame();
+
   const form = document.createElement("form");
   form.method = "POST";
   form.action = getScriptUrl();
@@ -304,10 +361,24 @@ function submitWithIframe(payload) {
   form.remove();
 
   setTimeout(() => {
-    if (!els.submitBtn.disabled) return;
-    els.submitBtn.disabled = false;
-    els.submitBtn.textContent = "Simpan ke Google Sheet";
+    if (!state.saving) return;
+    finishSavingState();
+    showToast("Backend belum mengirim respons. Cek deployment Apps Script.", "warn");
+    loadAllData({ showLoading: false });
   }, 18000);
+}
+
+function ensurePostFrame() {
+  let frame = document.querySelector('iframe[name="postFrame"]');
+
+  if (!frame) {
+    frame = document.createElement("iframe");
+    frame.name = "postFrame";
+    frame.style.display = "none";
+    document.body.appendChild(frame);
+  }
+
+  return frame;
 }
 
 function handleBackendMessage(event) {
@@ -316,19 +387,82 @@ function handleBackendMessage(event) {
 
   const payload = data.payload || {};
 
-  els.submitBtn.disabled = false;
-  els.submitBtn.textContent = "Simpan ke Google Sheet";
+  finishSavingState();
 
   if (payload.ok) {
     showToast(payload.message || "Data berhasil disimpan.", "ok");
+
     els.customerInput.value = "";
     els.keyInput.value = "";
     els.statusInput.value = "Masuk";
+    updateCustomerNameRequirement();
+
     els.customerInput.focus();
     loadAllData({ showLoading: false });
   } else {
     showToast(payload.message || "Data gagal disimpan.", "bad");
+    loadAllData({ showLoading: false });
   }
+}
+
+function finishSavingState() {
+  state.saving = false;
+  els.submitBtn.disabled = false;
+  els.submitBtn.textContent = "Simpan ke Google Sheet";
+  disableCheckoutButtons(false);
+}
+
+function disableCheckoutButtons(disabled) {
+  document.querySelectorAll(".checkout-btn").forEach((button) => {
+    button.disabled = disabled;
+  });
+}
+
+function handleTableAction(event) {
+  const button = event.target.closest("[data-action]");
+  if (!button) return;
+
+  const action = button.dataset.action;
+
+  if (action === "checkout") {
+    const keyNumber = button.dataset.keyNumber || "";
+    const customerName = button.dataset.customerName || "";
+    quickCheckout(keyNumber, customerName);
+  }
+}
+
+function quickCheckout(keyNumber, customerName = "") {
+  if (state.saving) return;
+
+  if (!isScriptUrlReady()) {
+    showToast("SCRIPT_URL belum benar di config.js.", "bad");
+    return;
+  }
+
+  const admin = els.adminInput.value.trim();
+
+  if (!admin) {
+    showToast("Isi nama admin/pegawai dulu sebelum checkout.", "warn");
+    els.adminInput.focus();
+    return;
+  }
+
+  if (!keyNumber) {
+    showToast("Nomor kunci tidak ditemukan.", "bad");
+    return;
+  }
+
+  const payload = {
+    action: "saveLog",
+    admin,
+    customerName,
+    keyNumber,
+    status: "Keluar"
+  };
+
+  localStorage.setItem("gymAdminName", admin);
+
+  submitPayload(payload);
 }
 
 function updateDashboard() {
@@ -368,6 +502,7 @@ function renderKeys() {
       <th>Dipakai Oleh</th>
       <th>Jam Masuk</th>
       <th>Update Terakhir</th>
+      <th>Aksi</th>
     </tr>
   `;
 
@@ -381,15 +516,35 @@ function renderKeys() {
     return matchSearch && matchStatus;
   });
 
-  els.tableBody.innerHTML = rows.map((item) => `
-    <tr>
-      <td><b>${escapeHtml(item.keyNumber || "-")}</b></td>
-      <td>${statusBadge(item.status)}</td>
-      <td>${escapeHtml(item.customerName || "-")}</td>
-      <td>${escapeHtml(item.checkInTime || "-")}</td>
-      <td>${escapeHtml(item.updatedAt || "-")}</td>
-    </tr>
-  `).join("");
+  els.tableBody.innerHTML = rows.map((item) => {
+    const status = String(item.status || "").toLowerCase();
+    const isUsed = status === "dipakai";
+    const keyNumber = escapeHtml(item.keyNumber || "");
+    const customerName = escapeHtml(item.customerName || "");
+
+    return `
+      <tr>
+        <td><b>${escapeHtml(item.keyNumber || "-")}</b></td>
+        <td>${statusBadge(item.status)}</td>
+        <td>${escapeHtml(item.customerName || "-")}</td>
+        <td>${escapeHtml(item.checkInTime || "-")}</td>
+        <td>${escapeHtml(item.updatedAt || "-")}</td>
+        <td>
+          ${
+            isUsed
+              ? `<button
+                    type="button"
+                    class="checkout-btn"
+                    data-action="checkout"
+                    data-key-number="${keyNumber}"
+                    data-customer-name="${customerName}"
+                  >Keluar</button>`
+              : `<span class="muted">-</span>`
+          }
+        </td>
+      </tr>
+    `;
+  }).join("");
 
   toggleEmpty(rows.length === 0);
 }
@@ -492,7 +647,11 @@ function toggleEmpty(isEmpty) {
 
 function setBackendStatus(type, text) {
   els.backendStatus.classList.remove("ok", "bad");
-  if (type) els.backendStatus.classList.add(type);
+
+  if (type) {
+    els.backendStatus.classList.add(type);
+  }
+
   els.backendStatus.textContent = text;
 }
 
@@ -502,6 +661,7 @@ function showToast(message, type = "") {
   els.toast.classList.remove("hidden");
 
   clearTimeout(showToast.timer);
+
   showToast.timer = setTimeout(() => {
     els.toast.classList.add("hidden");
   }, 4200);
