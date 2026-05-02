@@ -137,6 +137,15 @@ function doGet(e) {
       });
     }
 
+    if (action === 'savelog') {
+      const result = saveLogFromParams_(params);
+
+      return respondJson_(params.callback, {
+        ok: true,
+        message: result.message
+      });
+    }
+
     return respondJson_(params.callback, {
       ok: false,
       message: 'Action tidak dikenal: ' + action
@@ -151,6 +160,25 @@ function doGet(e) {
 }
 
 function doPost(e) {
+  const params = e && e.parameter ? e.parameter : {};
+
+  try {
+    const result = saveLogFromParams_(params);
+
+    return respondPostMessage_({
+      ok: true,
+      message: result.message
+    });
+
+  } catch (error) {
+    return respondPostMessage_({
+      ok: false,
+      message: error.message || String(error)
+    });
+  }
+}
+
+function saveLogFromParams_(params) {
   const lock = LockService.getScriptLock();
   let locked = false;
 
@@ -159,13 +187,6 @@ function doPost(e) {
     locked = true;
 
     ensureReady_();
-
-    const params = e && e.parameter ? e.parameter : {};
-    const action = String(params.action || '').trim();
-
-    if (action !== 'saveLog') {
-      throw new Error('Action tidak dikenal.');
-    }
 
     const payload = normalizePayload_(params);
 
@@ -195,10 +216,10 @@ function doPost(e) {
       updateDailyRecap_(dailySheet, payload);
       updateKey_(keySheet, payload);
 
-      return respondPostMessage_({
+      return {
         ok: true,
         message: 'Data masuk berhasil disimpan untuk kunci ' + payload.keyNumber + '.'
-      });
+      };
     }
 
     if (payload.status === 'Keluar') {
@@ -220,22 +241,18 @@ function doPost(e) {
       appendLog_(logSheet, checkoutPayload);
       updateKey_(keySheet, checkoutPayload);
 
-      return respondPostMessage_({
+      return {
         ok: true,
         message: 'Data keluar berhasil disimpan untuk kunci ' + payload.keyNumber + '.'
-      });
+      };
     }
 
     throw new Error('Status tidak valid.');
 
-  } catch (error) {
-    return respondPostMessage_({
-      ok: false,
-      message: error.message || String(error)
-    });
-
   } finally {
-    if (locked) lock.releaseLock();
+    if (locked) {
+      lock.releaseLock();
+    }
   }
 }
 
