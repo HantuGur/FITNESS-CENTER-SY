@@ -50,10 +50,11 @@ const DAILY_HEADERS = [
   'No Kunci',
   'Jam Masuk',
   'Waktu Masuk Lengkap',
-  'Admin',
+  'Admin Masuk',
   'Jam Keluar',
   'Sudah Keluar',
-  'Waktu Keluar Lengkap'
+  'Waktu Keluar Lengkap',
+  'Admin Keluar'
 ];
 
 function setupGymSheets() {
@@ -401,6 +402,7 @@ function appendDailyCheckIn_(sheet, payload) {
     payload.admin,
     '',
     false,
+    '',
     ''
   ]);
 
@@ -417,39 +419,22 @@ function markDailyCheckout_(sheet, payload) {
   const jamKeluar = formatTime_(timestamp);
   const waktuKeluarLengkap = formatDateTime_(timestamp);
 
-  const rowIndex = findOpenDailyRow_(sheet, tanggal, payload.keyNumber, payload.customerName);
+  const rowIndex = findOpenDailyRow_(sheet, tanggal, payload.keyNumber);
 
   if (!rowIndex) {
-    const nomorHarian = getNextDailyNumber_(sheet, tanggal);
-
-    sheet.appendRow([
-      tanggal,
-      nomorHarian,
-      payload.customerName,
-      payload.keyNumber,
-      '',
-      '',
-      payload.admin,
-      jamKeluar,
-      true,
-      waktuKeluarLengkap
-    ]);
-
-    const newRowIndex = sheet.getLastRow();
-
-    sheet.getRange(newRowIndex, 9).insertCheckboxes();
-    sheet.getRange(newRowIndex, 9).setValue(true);
-
-    return;
+    throw new Error(
+      'Data masuk untuk kunci ' + payload.keyNumber + ' hari ini belum ditemukan atau sudah checkout.'
+    );
   }
 
   sheet.getRange(rowIndex, 8).setValue(jamKeluar);
   sheet.getRange(rowIndex, 9).insertCheckboxes();
   sheet.getRange(rowIndex, 9).setValue(true);
   sheet.getRange(rowIndex, 10).setValue(waktuKeluarLengkap);
+  sheet.getRange(rowIndex, 11).setValue(payload.admin);
 }
 
-function findOpenDailyRow_(sheet, tanggal, keyNumber, customerName) {
+function findOpenDailyRow_(sheet, tanggal, keyNumber) {
   const lastRow = sheet.getLastRow();
 
   if (lastRow < 2) {
@@ -462,15 +447,13 @@ function findOpenDailyRow_(sheet, tanggal, keyNumber, customerName) {
     const row = values[i];
 
     const rowTanggal = stringifyCell_(row[0]);
-    const rowNama = cleanText_(row[2]).toLowerCase();
     const rowKunci = normalizeKeyNumber_(row[3]) || cleanText_(row[3]);
     const sudahKeluar = row[8] === true;
 
     const sameDate = rowTanggal === tanggal;
     const sameKey = rowKunci === keyNumber;
-    const sameName = rowNama === cleanText_(customerName).toLowerCase();
 
-    if (sameDate && sameKey && sameName && !sudahKeluar) {
+    if (sameDate && sameKey && !sudahKeluar) {
       return i + 2;
     }
   }
@@ -708,10 +691,11 @@ function getDailyRecap_() {
         noKunci: normalizeKeyNumber_(row[3]) || cleanText_(row[3]),
         jamMasuk: stringifyCell_(row[4]),
         waktuMasukLengkap: stringifyCell_(row[5]),
-        admin: cleanText_(row[6]),
+        adminMasuk: cleanText_(row[6]),
         jamKeluar: stringifyCell_(row[7]),
         sudahKeluar: row[8] === true,
-        waktuKeluarLengkap: stringifyCell_(row[9])
+        waktuKeluarLengkap: stringifyCell_(row[9]),
+        adminKeluar: cleanText_(row[10])
       };
     })
     .filter(function (item) {
