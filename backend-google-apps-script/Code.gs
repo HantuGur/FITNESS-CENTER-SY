@@ -3,43 +3,17 @@
    Google Apps Script + Google Sheet
    =============================== */
 
-// ===============================
-// 1. SETTING UTAMA
-// ===============================
-
-// Sheet utama sistem lu: LOG_GYM, DATA_KUNCI, REKAP_HARIAN, dll.
-// Isi cuma ID Google Sheet, bukan link full.
+// WAJIB: Isi cuma ID Google Sheet, bukan link full dan bukan link Apps Script.
 const SPREADSHEET_ID = '1J4YOaOLhwZ2fb4CpWUSMct8TnGX6oxfU5EO5tyG3AZw';
-
-// Sheet rekap member dari team lain.
-// Ambil ID dari link Google Sheet team lu.
-// Contoh link:
-// https://docs.google.com/spreadsheets/d/1ABCDEFxxxx/edit
-// ID-nya cuma:
-// 1ABCDEFxxxx
-const MEMBER_SOURCE_SPREADSHEET_ID = 'AKfycbw5oijMr6Ce4EUL1yvsyCMZG5I7ILXgMOdegk6MQVU93-BdERZklfIouXJv0U6Ng4MN';
-
-// Kalau sheet member team masih sama dengan sheet utama, kosongin aja:
-// const MEMBER_SOURCE_SPREADSHEET_ID = '';
 
 const TIMEZONE = 'Asia/Jakarta';
 
 const MAX_KEY_NUMBER = 100;
-const MEMBER_SOURCE_MAX_ROWS = 800;
 
 const SHEET_LOG = 'LOG_GYM';
 const SHEET_KEYS = 'DATA_KUNCI';
 const SHEET_MEMBERS = 'MEMBER_LIFETIME';
 const SHEET_DAILY = 'REKAP_HARIAN';
-
-const INTERNAL_SHEET_NAMES = [
-  SHEET_LOG,
-  SHEET_KEYS,
-  SHEET_MEMBERS,
-  SHEET_DAILY,
-  'DASHBOARD',
-  'README_SETUP'
-];
 
 const LOG_HEADERS = [
   'No',
@@ -83,10 +57,6 @@ const DAILY_HEADERS = [
   'Admin Keluar'
 ];
 
-// ===============================
-// 2. SETUP SHEET
-// ===============================
-
 function setupGymSheets() {
   const ss = getSpreadsheet_();
 
@@ -115,10 +85,6 @@ function setupGymSheets() {
 
   return 'Setup selesai. Sheet LOG_GYM, DATA_KUNCI, MEMBER_LIFETIME, dan REKAP_HARIAN siap dipakai.';
 }
-
-// ===============================
-// 3. API GET
-// ===============================
 
 function doGet(e) {
   const params = e && e.parameter ? e.parameter : {};
@@ -150,7 +116,7 @@ function doGet(e) {
     if (action === 'members') {
       return respondJson_(params.callback, {
         ok: true,
-        message: 'Data member / visit dari sheet team berhasil diambil.',
+        message: 'Data member lifetime berhasil diambil.',
         data: getMembers_()
       });
     }
@@ -183,10 +149,6 @@ function doGet(e) {
     });
   }
 }
-
-// ===============================
-// 4. API POST
-// ===============================
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
@@ -248,10 +210,6 @@ function doPost(e) {
   }
 }
 
-// ===============================
-// 5. VALIDASI DAN SPREADSHEET
-// ===============================
-
 function ensureReady_() {
   if (!SPREADSHEET_ID || SPREADSHEET_ID === 'PASTE_GOOGLE_SHEET_ID_HERE') {
     throw new Error('SPREADSHEET_ID belum diisi di Code.gs.');
@@ -264,33 +222,10 @@ function ensureReady_() {
   ) {
     throw new Error('SPREADSHEET_ID salah. Isi cuma ID Google Sheet, bukan link full dan bukan URL Apps Script.');
   }
-
-  if (
-    MEMBER_SOURCE_SPREADSHEET_ID &&
-    MEMBER_SOURCE_SPREADSHEET_ID !== 'PASTE_ID_SPREADSHEET_TEAM_DI_SINI' &&
-    (
-      String(MEMBER_SOURCE_SPREADSHEET_ID).includes('/edit') ||
-      String(MEMBER_SOURCE_SPREADSHEET_ID).includes('docs.google.com') ||
-      String(MEMBER_SOURCE_SPREADSHEET_ID).includes('script.google.com')
-    )
-  ) {
-    throw new Error('MEMBER_SOURCE_SPREADSHEET_ID salah. Isi cuma ID Google Sheet team, bukan link full.');
-  }
 }
 
 function getSpreadsheet_() {
   return SpreadsheetApp.openById(SPREADSHEET_ID);
-}
-
-function getMemberSpreadsheet_() {
-  if (
-    MEMBER_SOURCE_SPREADSHEET_ID &&
-    MEMBER_SOURCE_SPREADSHEET_ID !== 'PASTE_ID_SPREADSHEET_TEAM_DI_SINI'
-  ) {
-    return SpreadsheetApp.openById(MEMBER_SOURCE_SPREADSHEET_ID);
-  }
-
-  return getSpreadsheet_();
 }
 
 function getOrCreateSheet_(ss, name) {
@@ -302,10 +237,6 @@ function getOrCreateSheet_(ss, name) {
 
   return sheet;
 }
-
-// ===============================
-// 6. HEADER DAN STYLE
-// ===============================
 
 function setupHeader_(sheet, headers) {
   const lastCol = Math.max(sheet.getLastColumn(), headers.length);
@@ -350,10 +281,6 @@ function styleHeader_(sheet, length) {
     .setFontColor('#111827');
 }
 
-// ===============================
-// 7. DATA KUNCI
-// ===============================
-
 function seedKeys_(sheet, maxKey) {
   const existingKeys = new Set();
   const lastRow = sheet.getLastRow();
@@ -382,118 +309,6 @@ function seedKeys_(sheet, maxKey) {
   }
 }
 
-function updateKey_(sheet, payload) {
-  const record = getKeyRecord_(sheet, payload.keyNumber);
-  const rowIndex = record.rowIndex || appendKeyRow_(sheet, payload.keyNumber);
-  const nowText = formatDateTime_(new Date());
-
-  if (payload.status === 'Masuk') {
-    sheet.getRange(rowIndex, 1, 1, KEY_HEADERS.length).setValues([[
-      payload.keyNumber,
-      'Dipakai',
-      payload.customerName,
-      formatDateTime_(payload.timestamp || new Date()),
-      nowText
-    ]]);
-  } else {
-    sheet.getRange(rowIndex, 1, 1, KEY_HEADERS.length).setValues([[
-      payload.keyNumber,
-      'Kosong',
-      '',
-      '',
-      nowText
-    ]]);
-  }
-}
-
-function appendKeyRow_(sheet, keyNumber) {
-  const rowIndex = sheet.getLastRow() + 1;
-
-  sheet.getRange(rowIndex, 1, 1, KEY_HEADERS.length).setValues([[
-    keyNumber,
-    'Kosong',
-    '',
-    '',
-    ''
-  ]]);
-
-  return rowIndex;
-}
-
-function getKeyRecord_(sheet, keyNumber) {
-  const lastRow = sheet.getLastRow();
-
-  if (lastRow < 2) {
-    return {
-      rowIndex: null,
-      keyNumber: keyNumber,
-      status: 'Kosong',
-      customerName: '',
-      checkInTime: '',
-      updatedAt: ''
-    };
-  }
-
-  const values = sheet.getRange(2, 1, lastRow - 1, KEY_HEADERS.length).getValues();
-
-  for (let i = 0; i < values.length; i++) {
-    const row = values[i];
-    const rowKey = normalizeKeyNumber_(row[0]);
-
-    if (rowKey === keyNumber) {
-      return {
-        rowIndex: i + 2,
-        keyNumber: rowKey,
-        status: cleanText_(row[1]) || 'Kosong',
-        customerName: cleanText_(row[2]),
-        checkInTime: stringifyCell_(row[3]),
-        updatedAt: stringifyCell_(row[4])
-      };
-    }
-  }
-
-  return {
-    rowIndex: null,
-    keyNumber: keyNumber,
-    status: 'Kosong',
-    customerName: '',
-    checkInTime: '',
-    updatedAt: ''
-  };
-}
-
-function getKeys_() {
-  const ss = getSpreadsheet_();
-  const sheet = getOrCreateSheet_(ss, SHEET_KEYS);
-
-  setupHeader_(sheet, KEY_HEADERS);
-  seedKeys_(sheet, MAX_KEY_NUMBER);
-
-  const lastRow = sheet.getLastRow();
-
-  if (lastRow < 2) return [];
-
-  const values = sheet.getRange(2, 1, lastRow - 1, KEY_HEADERS.length).getValues();
-
-  return values
-    .filter(function (row) {
-      return cleanText_(row[0]);
-    })
-    .map(function (row) {
-      return {
-        keyNumber: normalizeKeyNumber_(row[0]),
-        status: cleanText_(row[1]) || 'Kosong',
-        customerName: cleanText_(row[2]),
-        checkInTime: stringifyCell_(row[3]),
-        updatedAt: stringifyCell_(row[4])
-      };
-    });
-}
-
-// ===============================
-// 8. INPUT MASUK / KELUAR
-// ===============================
-
 function normalizePayload_(params) {
   const admin = cleanText_(params.admin);
   const customerName = cleanText_(params.customerName || params.nama || params.namaPelanggan);
@@ -512,6 +327,31 @@ function normalizePayload_(params) {
     status: status,
     timestamp: new Date()
   };
+}
+
+function cleanText_(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function normalizeKeyNumber_(value) {
+  const raw = String(value || '').trim();
+
+  if (!raw) return '';
+
+  const number = Number(raw);
+
+  if (!Number.isFinite(number) || number <= 0) return '';
+
+  return String(Math.floor(number)).padStart(2, '0');
+}
+
+function normalizeStatus_(value) {
+  const raw = String(value || '').trim().toLowerCase();
+
+  if (raw === 'masuk') return 'Masuk';
+  if (raw === 'keluar') return 'Keluar';
+
+  return '';
 }
 
 function appendLog_(sheet, payload) {
@@ -643,186 +483,156 @@ function getNextDailyNumber_(sheet, tanggal) {
   return count + 1;
 }
 
-// ===============================
-// 9. BACA MEMBER DARI SHEET TEAM
-// ===============================
+function updateKey_(sheet, payload) {
+  const record = getKeyRecord_(sheet, payload.keyNumber);
+  const rowIndex = record.rowIndex || appendKeyRow_(sheet, payload.keyNumber);
+  const nowText = formatDateTime_(new Date());
 
-function getMembers_() {
-  const ss = getMemberSpreadsheet_();
-  const sheets = ss.getSheets();
+  if (payload.status === 'Masuk') {
+    sheet.getRange(rowIndex, 1, 1, KEY_HEADERS.length).setValues([[
+      payload.keyNumber,
+      'Dipakai',
+      payload.customerName,
+      formatDateTime_(payload.timestamp || new Date()),
+      nowText
+    ]]);
+  } else {
+    sheet.getRange(rowIndex, 1, 1, KEY_HEADERS.length).setValues([[
+      payload.keyNumber,
+      'Kosong',
+      '',
+      '',
+      nowText
+    ]]);
+  }
+}
 
-  let result = [];
+function appendKeyRow_(sheet, keyNumber) {
+  const rowIndex = sheet.getLastRow() + 1;
 
-  sheets.forEach(function (sheet, sheetIndex) {
-    const sheetName = sheet.getName();
+  sheet.getRange(rowIndex, 1, 1, KEY_HEADERS.length).setValues([[
+    keyNumber,
+    'Kosong',
+    '',
+    '',
+    ''
+  ]]);
 
-    if (shouldSkipMemberSourceSheet_(sheetName)) {
-      return;
-    }
+  return rowIndex;
+}
 
-    const rows = readMemberRowsFromSheet_(sheet, sheetIndex);
+function getKeyRecord_(sheet, keyNumber) {
+  const lastRow = sheet.getLastRow();
 
-    result = result.concat(rows);
-  });
+  if (lastRow < 2) {
+    return {
+      rowIndex: null,
+      keyNumber: keyNumber,
+      status: 'Kosong',
+      customerName: '',
+      checkInTime: '',
+      updatedAt: ''
+    };
+  }
 
-  result.sort(function (a, b) {
-    if (b._sheetIndex !== a._sheetIndex) {
-      return b._sheetIndex - a._sheetIndex;
-    }
+  const values = sheet.getRange(2, 1, lastRow - 1, KEY_HEADERS.length).getValues();
 
-    return b._rowIndex - a._rowIndex;
-  });
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const rowKey = normalizeKeyNumber_(row[0]);
 
-  return result
-    .slice(0, MEMBER_SOURCE_MAX_ROWS)
-    .map(function (item) {
+    if (rowKey === keyNumber) {
       return {
-        memberId: item.memberId,
-        memberName: item.memberName,
-        status: item.status,
-        registeredAt: item.registeredAt,
-        createdBy: item.createdBy,
-        updatedAt: item.updatedAt,
-        masaBerlaku: item.masaBerlaku,
-        tanggalBerlaku: item.tanggalBerlaku,
-        keterangan: item.keterangan,
-        jumlah: item.jumlah,
-        noKuitansi: item.noKuitansi,
-        sheetName: item.sheetName
+        rowIndex: i + 2,
+        keyNumber: rowKey,
+        status: cleanText_(row[1]) || 'Kosong',
+        customerName: cleanText_(row[2]),
+        checkInTime: stringifyCell_(row[3]),
+        updatedAt: stringifyCell_(row[4])
+      };
+    }
+  }
+
+  return {
+    rowIndex: null,
+    keyNumber: keyNumber,
+    status: 'Kosong',
+    customerName: '',
+    checkInTime: '',
+    updatedAt: ''
+  };
+}
+
+function getKeys_() {
+  const ss = getSpreadsheet_();
+  const sheet = getOrCreateSheet_(ss, SHEET_KEYS);
+
+  setupHeader_(sheet, KEY_HEADERS);
+  seedKeys_(sheet, MAX_KEY_NUMBER);
+
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) return [];
+
+  const values = sheet.getRange(2, 1, lastRow - 1, KEY_HEADERS.length).getValues();
+
+  return values
+    .filter(function (row) {
+      return cleanText_(row[0]);
+    })
+    .map(function (row) {
+      return {
+        keyNumber: normalizeKeyNumber_(row[0]),
+        status: cleanText_(row[1]) || 'Kosong',
+        customerName: cleanText_(row[2]),
+        checkInTime: stringifyCell_(row[3]),
+        updatedAt: stringifyCell_(row[4])
       };
     });
 }
 
-function shouldSkipMemberSourceSheet_(sheetName) {
-  const cleanName = cleanText_(sheetName).toLowerCase();
+function getMembers_() {
+  const ss = getSpreadsheet_();
+  const sheet = getOrCreateSheet_(ss, SHEET_MEMBERS);
 
-  return INTERNAL_SHEET_NAMES.some(function (name) {
-    return cleanText_(name).toLowerCase() === cleanName;
-  });
-}
+  setupHeader_(sheet, MEMBER_HEADERS);
 
-function readMemberRowsFromSheet_(sheet, sheetIndex) {
   const lastRow = sheet.getLastRow();
-  const lastCol = sheet.getLastColumn();
+  const lastCol = Math.max(sheet.getLastColumn(), MEMBER_HEADERS.length);
 
-  if (lastRow < 2 || lastCol < 2) {
-    return [];
-  }
+  if (lastRow < 2) return [];
 
-  const values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-  const result = [];
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(cleanHeader_);
+  const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
-  let headerMap = null;
-  let lastTanggal = '';
-
-  for (let r = 0; r < values.length; r++) {
-    const row = values[r];
-
-    if (isMemberHeaderRow_(row)) {
-      headerMap = buildMemberHeaderMap_(row);
-      lastTanggal = '';
-      continue;
-    }
-
-    if (!headerMap) {
-      continue;
-    }
-
-    const rawTanggal = getByIndex_(row, headerMap.tanggal);
-    const rawNama = getByIndex_(row, headerMap.nama);
-    const rawNoAnggota = getByIndex_(row, headerMap.noAnggota);
-    const rawMasaBerlaku = getByIndex_(row, headerMap.masaBerlaku);
-    const rawTanggalBerlaku = getByIndex_(row, headerMap.tanggalBerlaku);
-    const rawKeterangan = getByIndex_(row, headerMap.keterangan);
-    const rawJumlah = getByIndex_(row, headerMap.jumlah);
-    const rawNoKuitansi = getByIndex_(row, headerMap.noKuitansi);
-
-    const tanggalText = stringifyDateOnly_(rawTanggal);
-    const nama = cleanText_(rawNama);
-    const noAnggota = cleanText_(rawNoAnggota);
-    const masaBerlaku = cleanText_(rawMasaBerlaku);
-    const tanggalBerlaku = stringifyCell_(rawTanggalBerlaku);
-    const keterangan = cleanText_(rawKeterangan);
-    const jumlah = stringifyCell_(rawJumlah);
-    const noKuitansi = cleanText_(rawNoKuitansi);
-
-    if (tanggalText) {
-      lastTanggal = tanggalText;
-    }
-
-    if (!nama && !noAnggota && !masaBerlaku) {
-      continue;
-    }
-
-    if (isTotalRow_(row)) {
-      continue;
-    }
-
-    const memberId = noAnggota || noKuitansi || String(result.length + 1).padStart(3, '0');
-
-    result.push({
-      memberId: memberId,
-      memberName: nama,
-      status: masaBerlaku || 'Member',
-      registeredAt: lastTanggal,
-      createdBy: keterangan,
-      updatedAt: tanggalBerlaku || lastTanggal,
-      masaBerlaku: masaBerlaku,
-      tanggalBerlaku: tanggalBerlaku,
-      keterangan: keterangan,
-      jumlah: jumlah,
-      noKuitansi: noKuitansi,
-      sheetName: sheet.getName(),
-      _sheetIndex: sheetIndex,
-      _rowIndex: r + 1
-    });
-  }
-
-  return result;
-}
-
-function isMemberHeaderRow_(row) {
-  const normalized = row.map(function (cell) {
-    return cleanHeader_(cell);
-  });
-
-  const hasNama = normalized.indexOf('nama') !== -1 || normalized.indexOf('nama member') !== -1;
-  const hasNoAnggota =
-    normalized.indexOf('no.anggota') !== -1 ||
-    normalized.indexOf('no anggota') !== -1 ||
-    normalized.indexOf('noanggota') !== -1 ||
-    normalized.indexOf('nomor anggota') !== -1;
-
-  return hasNama && hasNoAnggota;
-}
-
-function buildMemberHeaderMap_(row) {
-  const headers = row.map(cleanHeader_);
-
-  return {
-    tanggal: findHeaderIndex_(headers, ['tanggal']),
-    nama: findHeaderIndex_(headers, ['nama', 'nama member']),
-    noAnggota: findHeaderIndex_(headers, ['no.anggota', 'no anggota', 'noanggota', 'nomor anggota']),
-    masaBerlaku: findHeaderIndex_(headers, ['masa berlaku']),
-    tanggalBerlaku: findHeaderIndex_(headers, ['tanggal berlaku']),
-    keterangan: findHeaderIndex_(headers, ['keterangan']),
-    jumlah: findHeaderIndex_(headers, ['jumlah']),
-    cetakKartu: findHeaderIndex_(headers, ['cetak kartu']),
-    noKuitansi: findHeaderIndex_(headers, ['no. kuitansi', 'no kuitansi', 'nomor kuitansi']),
-    kartuMember: findHeaderIndex_(headers, ['kartu member'])
+  const idx = {
+    memberId: findHeaderIndex_(headers, ['no', 'id member', 'id', 'no member', 'nomor member', 'kode member']),
+    memberName: findHeaderIndex_(headers, ['nama member', 'nama', 'name', 'member']),
+    status: findHeaderIndex_(headers, ['status', 'status member', 'tipe member']),
+    registeredAt: findHeaderIndex_(headers, ['tanggal daftar', 'tanggal', 'join date', 'mulai member', 'tanggal mulai']),
+    createdBy: findHeaderIndex_(headers, ['diinput oleh', 'admin', 'input oleh', 'pegawai']),
+    updatedAt: findHeaderIndex_(headers, ['update terakhir', 'updated at', 'last update', 'terakhir update'])
   };
-}
 
-function isTotalRow_(row) {
-  return row.some(function (cell) {
-    const text = cleanText_(cell).toLowerCase();
-    return text === 'total' || text === 'jumlah total';
-  });
-}
+  return values
+    .map(function (row, index) {
+      const fallbackNo = String(index + 1).padStart(3, '0');
+      const memberId = getRowValue_(row, idx.memberId) || fallbackNo;
+      const memberName = getRowValue_(row, idx.memberName);
 
-// ===============================
-// 10. LOG DAN REKAP
-// ===============================
+      return {
+        memberId: memberId,
+        memberName: memberName,
+        status: getRowValue_(row, idx.status) || 'Lifetime',
+        registeredAt: stringifyCell_(getRawRowValue_(row, idx.registeredAt)),
+        createdBy: getRowValue_(row, idx.createdBy),
+        updatedAt: stringifyCell_(getRawRowValue_(row, idx.updatedAt))
+      };
+    })
+    .filter(function (item) {
+      return item.memberName || item.memberId;
+    });
+}
 
 function getLogs_() {
   const ss = getSpreadsheet_();
@@ -894,56 +704,17 @@ function getDailyRecap_() {
     .reverse();
 }
 
-// ===============================
-// 11. HELPER
-// ===============================
-
-function cleanText_(value) {
-  return String(value || '').trim().replace(/\s+/g, ' ');
-}
-
 function cleanHeader_(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/\s*\.\s*/g, '.');
-}
-
-function normalizeKeyNumber_(value) {
-  const raw = String(value || '').trim();
-
-  if (!raw) return '';
-
-  const number = Number(raw);
-
-  if (!Number.isFinite(number) || number <= 0) return '';
-
-  return String(Math.floor(number)).padStart(2, '0');
-}
-
-function normalizeStatus_(value) {
-  const raw = String(value || '').trim().toLowerCase();
-
-  if (raw === 'masuk') return 'Masuk';
-  if (raw === 'keluar') return 'Keluar';
-
-  return '';
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 function findHeaderIndex_(headers, aliases) {
   for (let i = 0; i < aliases.length; i++) {
-    const alias = cleanHeader_(aliases[i]);
-    const index = headers.indexOf(alias);
-
+    const index = headers.indexOf(aliases[i]);
     if (index !== -1) return index;
   }
 
   return -1;
-}
-
-function getByIndex_(row, index) {
-  return index >= 0 ? row[index] : '';
 }
 
 function getRawRowValue_(row, index) {
@@ -957,14 +728,6 @@ function getRowValue_(row, index) {
 function stringifyCell_(value) {
   if (value instanceof Date) {
     return formatDateTime_(value);
-  }
-
-  return cleanText_(value);
-}
-
-function stringifyDateOnly_(value) {
-  if (value instanceof Date) {
-    return formatDate_(value);
   }
 
   return cleanText_(value);
@@ -987,10 +750,6 @@ function autoResize_(sheet, length) {
     sheet.autoResizeColumn(i);
   }
 }
-
-// ===============================
-// 12. RESPONSE
-// ===============================
 
 function respondJson_(callback, payload) {
   const json = JSON.stringify(payload);
