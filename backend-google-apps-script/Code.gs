@@ -1,832 +1,790 @@
-/* ===============================
-   BACKEND SISTEM ADMIN GYM
-   Google Apps Script + Google Sheet
-   =============================== */
+const SPREADSHEET_ID = ""; 
+// Kosongkan kalau Apps Script lo bound langsung ke Google Sheet.
+// Kalau Apps Script standalone, isi dengan ID spreadsheet:
+// const SPREADSHEET_ID = "PASTE_ID_SPREADSHEET_DI_SINI";
 
-// WAJIB: Isi cuma ID Google Sheet, bukan link full dan bukan link Apps Script.
-const SPREADSHEET_ID = '1J4YOaOLhwZ2fb4CpWUSMct8TnGX6oxfU5EO5tyG3AZw';
+const APP_TITLE = "Sistem Rekap Fitness Center";
 
-const TIMEZONE = 'Asia/Jakarta';
+const COL = {
+  TANGGAL: 1,
+  NAMA: 2,
+  NO_ANGGOTA: 3,
+  MASA_BERLAKU: 4,
+  TANGGAL_BERLAKU: 5,
+  KETERANGAN: 6,
+  JUMLAH: 7,
+  CETAK_KARTU: 8,
+  NO_KUITANSI: 9,
+  MULAI_MEMBER: 10,
+  EXPIRED_MEMBER: 11,
+  SISA_HARI: 12,
+  STATUS_MASA_AKTIF: 13,
+  KETERANGAN_MASA_AKTIF: 14
+};
 
-const MAX_KEY_NUMBER = 100;
-
-const SHEET_LOG = 'LOG_GYM';
-const SHEET_KEYS = 'DATA_KUNCI';
-const SHEET_MEMBERS = 'MEMBER_LIFETIME';
-const SHEET_DAILY = 'REKAP_HARIAN';
-
-const LOG_HEADERS = [
-  'No',
-  'Waktu Lengkap',
-  'Tanggal',
-  'Jam',
-  'Nama',
-  'No Kunci',
-  'Status',
-  'Admin'
+const EXTRA_HEADERS = [
+  "Mulai Member",
+  "Expired Member",
+  "Sisa Hari",
+  "Status Masa Aktif",
+  "Keterangan Masa Aktif"
 ];
 
-const KEY_HEADERS = [
-  'No Kunci',
-  'Status',
-  'Dipakai Oleh',
-  'Jam Masuk',
-  'Update Terakhir'
+const BULAN_INDONESIA = {
+  "januari": 0,
+  "februari": 1,
+  "maret": 2,
+  "april": 3,
+  "mei": 4,
+  "juni": 5,
+  "juli": 6,
+  "agustus": 7,
+  "september": 8,
+  "oktober": 9,
+  "november": 10,
+  "desember": 11
+};
+
+const NAMA_BULAN = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember"
 ];
 
-const MEMBER_HEADERS = [
-  'No',
-  'Nama Member',
-  'Status',
-  'Tanggal Daftar',
-  'Diinput Oleh',
-  'Update Terakhir'
-];
-
-const DAILY_HEADERS = [
-  'Tanggal',
-  'No',
-  'Nama',
-  'No Kunci',
-  'Jam Masuk',
-  'Waktu Masuk Lengkap',
-  'Admin Masuk',
-  'Jam Keluar',
-  'Sudah Keluar',
-  'Waktu Keluar Lengkap',
-  'Admin Keluar'
-];
-
-function setupGymSheets() {
-  const ss = getSpreadsheet_();
-
-  const logSheet = getOrCreateSheet_(ss, SHEET_LOG);
-  const keySheet = getOrCreateSheet_(ss, SHEET_KEYS);
-  const memberSheet = getOrCreateSheet_(ss, SHEET_MEMBERS);
-  const dailySheet = getOrCreateSheet_(ss, SHEET_DAILY);
-
-  setupHeader_(logSheet, LOG_HEADERS);
-  setupHeader_(keySheet, KEY_HEADERS);
-  setupHeader_(memberSheet, MEMBER_HEADERS);
-  setupDailyHeader_(dailySheet);
-
-  seedKeys_(keySheet, MAX_KEY_NUMBER);
-  setupDailyCheckboxes_(dailySheet);
-
-  logSheet.setFrozenRows(1);
-  keySheet.setFrozenRows(1);
-  memberSheet.setFrozenRows(1);
-  dailySheet.setFrozenRows(1);
-
-  autoResize_(logSheet, LOG_HEADERS.length);
-  autoResize_(keySheet, KEY_HEADERS.length);
-  autoResize_(memberSheet, MEMBER_HEADERS.length);
-  autoResize_(dailySheet, DAILY_HEADERS.length);
-
-  return 'Setup selesai. Sheet LOG_GYM, DATA_KUNCI, MEMBER_LIFETIME, dan REKAP_HARIAN siap dipakai.';
-}
-
-function doGet(e) {
-  const params = e && e.parameter ? e.parameter : {};
-
-  try {
-    ensureReady_();
-
-    const action = String(params.action || 'ping').trim().toLowerCase();
-
-    if (action === 'ping') {
-      return respondJson_(params.callback, {
-        ok: true,
-        message: 'Backend Sistem Admin Gym aktif.',
-        data: {
-          app: 'Sistem Admin Gym',
-          serverTime: formatDateTime_(new Date())
-        }
-      });
-    }
-
-    if (action === 'keys') {
-      return respondJson_(params.callback, {
-        ok: true,
-        message: 'Data kunci berhasil diambil.',
-        data: getKeys_()
-      });
-    }
-
-    if (action === 'members') {
-      return respondJson_(params.callback, {
-        ok: true,
-        message: 'Data member lifetime berhasil diambil.',
-        data: getMembers_()
-      });
-    }
-
-    if (action === 'logs') {
-      return respondJson_(params.callback, {
-        ok: true,
-        message: 'Data audit berhasil diambil.',
-        data: getLogs_()
-      });
-    }
-
-    if (action === 'daily') {
-      return respondJson_(params.callback, {
-        ok: true,
-        message: 'Data rekap harian berhasil diambil.',
-        data: getDailyRecap_()
-      });
-    }
-
-    if (action === 'savelog') {
-      const result = saveLogFromParams_(params);
-
-      return respondJson_(params.callback, {
-        ok: true,
-        message: result.message
-      });
-    }
-
-    return respondJson_(params.callback, {
-      ok: false,
-      message: 'Action tidak dikenal: ' + action
-    });
-
-  } catch (error) {
-    return respondJson_(params.callback, {
-      ok: false,
-      message: error.message || String(error)
-    });
-  }
-}
-
-function doPost(e) {
-  const params = e && e.parameter ? e.parameter : {};
-
-  try {
-    const result = saveLogFromParams_(params);
-
-    return respondPostMessage_({
-      ok: true,
-      message: result.message
-    });
-
-  } catch (error) {
-    return respondPostMessage_({
-      ok: false,
-      message: error.message || String(error)
-    });
-  }
-}
-
-function saveLogFromParams_(params) {
-  const lock = LockService.getScriptLock();
-  let locked = false;
-
-  try {
-    lock.waitLock(10000);
-    locked = true;
-
-    ensureReady_();
-
-    const payload = normalizePayload_(params);
-
-    const ss = getSpreadsheet_();
-
-    const logSheet = getOrCreateSheet_(ss, SHEET_LOG);
-    const keySheet = getOrCreateSheet_(ss, SHEET_KEYS);
-    const dailySheet = getOrCreateSheet_(ss, SHEET_DAILY);
-
-    setupHeader_(logSheet, LOG_HEADERS);
-    setupHeader_(keySheet, KEY_HEADERS);
-    setupDailyHeader_(dailySheet);
-
-    seedKeys_(keySheet, MAX_KEY_NUMBER);
-    setupDailyCheckboxes_(dailySheet);
-
-    const currentKey = getKeyRecord_(keySheet, payload.keyNumber);
-
-    if (payload.status === 'Masuk') {
-      if (currentKey.status === 'Dipakai') {
-        throw new Error(
-          'Kunci ' + payload.keyNumber + ' sedang dipakai oleh ' + (currentKey.customerName || 'pelanggan lain') + '.'
-        );
-      }
-
-      appendLog_(logSheet, payload);
-      updateDailyRecap_(dailySheet, payload);
-      updateKey_(keySheet, payload);
-
-      return {
-        ok: true,
-        message: 'Data masuk berhasil disimpan untuk kunci ' + payload.keyNumber + '.'
-      };
-    }
-
-    if (payload.status === 'Keluar') {
-      if (currentKey.status !== 'Dipakai') {
-        throw new Error(
-          'Kunci ' + payload.keyNumber + ' belum tercatat sedang dipakai, jadi tidak bisa checkout.'
-        );
-      }
-
-      const checkoutPayload = {
-        admin: payload.admin,
-        customerName: currentKey.customerName || payload.customerName || 'Tanpa Nama',
-        keyNumber: payload.keyNumber,
-        status: 'Keluar',
-        timestamp: payload.timestamp
-      };
-
-      updateDailyRecap_(dailySheet, checkoutPayload);
-      appendLog_(logSheet, checkoutPayload);
-      updateKey_(keySheet, checkoutPayload);
-
-      return {
-        ok: true,
-        message: 'Data keluar berhasil disimpan untuk kunci ' + payload.keyNumber + '.'
-      };
-    }
-
-    throw new Error('Status tidak valid.');
-
-  } finally {
-    if (locked) {
-      lock.releaseLock();
-    }
-  }
-}
-
-function ensureReady_() {
-  if (!SPREADSHEET_ID || SPREADSHEET_ID === 'PASTE_GOOGLE_SHEET_ID_HERE') {
-    throw new Error('SPREADSHEET_ID belum diisi di Code.gs.');
-  }
-
-  if (
-    String(SPREADSHEET_ID).includes('/edit') ||
-    String(SPREADSHEET_ID).includes('docs.google.com') ||
-    String(SPREADSHEET_ID).includes('script.google.com')
-  ) {
-    throw new Error('SPREADSHEET_ID salah. Isi cuma ID Google Sheet, bukan link full dan bukan URL Apps Script.');
-  }
+function doGet() {
+  return HtmlService
+    .createHtmlOutputFromFile("index")
+    .setTitle(APP_TITLE)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 function getSpreadsheet_() {
-  return SpreadsheetApp.openById(SPREADSHEET_ID);
+  if (SPREADSHEET_ID && SPREADSHEET_ID.trim() !== "") {
+    return SpreadsheetApp.openById(SPREADSHEET_ID);
+  }
+
+  return SpreadsheetApp.getActiveSpreadsheet();
 }
 
-function getOrCreateSheet_(ss, name) {
-  let sheet = ss.getSheetByName(name);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(name);
-  }
-
-  return sheet;
+function normalizeDate_(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-function setupHeader_(sheet, headers) {
-  const lastCol = Math.max(sheet.getLastColumn(), headers.length);
-
-  if (sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    styleHeader_(sheet, headers.length);
-    return;
-  }
-
-  const current = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  const rowEmpty = current.every(function (value) {
-    return String(value || '').trim() === '';
-  });
-
-  if (rowEmpty) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    styleHeader_(sheet, headers.length);
-  }
+function isValidDate_(date) {
+  return date instanceof Date && !isNaN(date.getTime());
 }
 
-function setupDailyHeader_(sheet) {
-  sheet.getRange(1, 1, 1, DAILY_HEADERS.length).setValues([DAILY_HEADERS]);
-  styleHeader_(sheet, DAILY_HEADERS.length);
-  sheet.setFrozenRows(1);
+function isSameDate_(a, b) {
+  const da = normalizeDate_(a);
+  const db = normalizeDate_(b);
+
+  return da.getTime() === db.getTime();
 }
 
-function setupDailyCheckboxes_(sheet) {
-  const lastRow = sheet.getLastRow();
+function formatDateKey_(date) {
+  if (!date || !isValidDate_(date)) return "";
 
-  if (lastRow < 2) {
-    return;
-  }
-
-  sheet.getRange(2, 9, lastRow - 1, 1).insertCheckboxes();
+  return Utilities.formatDate(
+    normalizeDate_(date),
+    Session.getScriptTimeZone(),
+    "yyyy-MM-dd"
+  );
 }
 
-function styleHeader_(sheet, length) {
-  sheet.getRange(1, 1, 1, length)
-    .setFontWeight('bold')
-    .setBackground('#eaf1ff')
-    .setFontColor('#111827');
+function formatTanggalIndonesia_(date) {
+  if (!date || !isValidDate_(date)) return "";
+
+  const d = normalizeDate_(date);
+
+  return d.getDate() + " " + NAMA_BULAN[d.getMonth()] + " " + d.getFullYear();
 }
 
-function seedKeys_(sheet, maxKey) {
-  const existingKeys = new Set();
-  const lastRow = sheet.getLastRow();
+function parseDateFlexible_(value) {
+  if (!value) return null;
 
-  if (lastRow >= 2) {
-    const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-
-    values.forEach(function (row) {
-      const key = normalizeKeyNumber_(row[0]);
-      if (key) existingKeys.add(key);
-    });
+  if (Object.prototype.toString.call(value) === "[object Date]") {
+    const date = normalizeDate_(value);
+    return isValidDate_(date) ? date : null;
   }
 
-  const rows = [];
+  const text = String(value).trim();
 
-  for (let i = 1; i <= maxKey; i++) {
-    const key = String(i).padStart(2, '0');
+  if (text === "") return null;
 
-    if (!existingKeys.has(key)) {
-      rows.push([key, 'Kosong', '', '', '']);
-    }
+  // Format input HTML date: yyyy-mm-dd
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const tahun = Number(isoMatch[1]);
+    const bulan = Number(isoMatch[2]) - 1;
+    const hari = Number(isoMatch[3]);
+
+    return normalizeDate_(new Date(tahun, bulan, hari));
   }
 
-  if (rows.length) {
-    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, KEY_HEADERS.length).setValues(rows);
+  // Format Indonesia: 4 Mei 2026
+  const indoMatch = text.match(/(\d{1,2})\s+(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+(\d{4})/i);
+  if (indoMatch) {
+    const hari = Number(indoMatch[1]);
+    const bulan = BULAN_INDONESIA[indoMatch[2].toLowerCase()];
+    const tahun = Number(indoMatch[3]);
+
+    return normalizeDate_(new Date(tahun, bulan, hari));
   }
+
+  const parsed = new Date(text);
+  if (isValidDate_(parsed)) {
+    return normalizeDate_(parsed);
+  }
+
+  return null;
 }
 
-function normalizePayload_(params) {
-  const admin = cleanText_(params.admin);
-  const customerName = cleanText_(params.customerName || params.nama || params.namaPelanggan);
-  const keyNumber = normalizeKeyNumber_(params.keyNumber || params.noKunci || params.nomorKunci);
-  const status = normalizeStatus_(params.status);
+function parseAllTanggalIndonesia_(text) {
+  if (!text) return [];
 
-  if (!admin) {
-    throw new Error('Nama admin/pegawai wajib diisi.');
+  if (Object.prototype.toString.call(text) === "[object Date]") {
+    const date = normalizeDate_(text);
+    return isValidDate_(date) ? [date] : [];
   }
 
-  if (!keyNumber) {
-    throw new Error('Nomor kunci wajib diisi.');
+  const regex = /(\d{1,2})\s+(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+(\d{4})/gi;
+
+  const hasil = [];
+  let match;
+
+  while ((match = regex.exec(String(text))) !== null) {
+    const hari = Number(match[1]);
+    const bulan = BULAN_INDONESIA[match[2].toLowerCase()];
+    const tahun = Number(match[3]);
+
+    hasil.push(normalizeDate_(new Date(tahun, bulan, hari)));
   }
 
-  if (!status) {
-    throw new Error('Status tidak valid.');
+  return hasil;
+}
+
+function hitungMasaAktifMember_(tanggalBerlaku) {
+  const daftarTanggal = parseAllTanggalIndonesia_(tanggalBerlaku);
+
+  if (daftarTanggal.length === 0) {
+    return {
+      mulaiMember: "",
+      expiredMember: "",
+      sisaHari: "",
+      statusMasaAktif: "Tanggal Tidak Valid",
+      keteranganMasaAktif: "Tanggal berlaku belum bisa dibaca"
+    };
   }
 
-  if (status === 'Masuk' && !customerName) {
-    throw new Error('Nama pelanggan wajib diisi untuk check-in.');
+  const mulaiMember = daftarTanggal[0];
+  const expiredMember = daftarTanggal.length >= 2
+    ? daftarTanggal[daftarTanggal.length - 1]
+    : daftarTanggal[0];
+
+  const hariIni = normalizeDate_(new Date());
+
+  const selisihMs = expiredMember.getTime() - hariIni.getTime();
+  const sisaHari = Math.ceil(selisihMs / (1000 * 60 * 60 * 24));
+
+  let statusMasaAktif = "";
+
+  if (hariIni.getTime() < mulaiMember.getTime()) {
+    statusMasaAktif = "Belum Mulai";
+  } else if (hariIni.getTime() > expiredMember.getTime()) {
+    statusMasaAktif = "Expired";
+  } else if (sisaHari === 0) {
+    statusMasaAktif = "Berakhir Hari Ini";
+  } else {
+    statusMasaAktif = "Aktif";
+  }
+
+  let keteranganMasaAktif = "";
+
+  if (statusMasaAktif === "Expired") {
+    keteranganMasaAktif =
+      "Mulai member " +
+      formatTanggalIndonesia_(mulaiMember) +
+      ", expired " +
+      Math.abs(sisaHari) +
+      " hari lalu";
+  } else if (statusMasaAktif === "Berakhir Hari Ini") {
+    keteranganMasaAktif =
+      "Mulai member " +
+      formatTanggalIndonesia_(mulaiMember) +
+      ", berakhir hari ini";
+  } else if (statusMasaAktif === "Belum Mulai") {
+    keteranganMasaAktif =
+      "Mulai member " +
+      formatTanggalIndonesia_(mulaiMember) +
+      ", belum mulai";
+  } else {
+    keteranganMasaAktif =
+      "Mulai member " +
+      formatTanggalIndonesia_(mulaiMember) +
+      ", sisa " +
+      sisaHari +
+      " hari";
   }
 
   return {
-    admin: admin,
-    customerName: customerName,
-    keyNumber: keyNumber,
-    status: status,
-    timestamp: new Date()
+    mulaiMember: formatTanggalIndonesia_(mulaiMember),
+    expiredMember: formatTanggalIndonesia_(expiredMember),
+    sisaHari: sisaHari,
+    statusMasaAktif: statusMasaAktif,
+    keteranganMasaAktif: keteranganMasaAktif
   };
 }
 
-function cleanText_(value) {
-  return String(value || '').trim().replace(/\s+/g, ' ');
+function buatTanggalBerlakuOtomatis_(tanggalMulaiInput, masaBerlakuInput) {
+  const mulai = parseDateFlexible_(tanggalMulaiInput);
+
+  if (!mulai) {
+    throw new Error("Tanggal mulai tidak valid.");
+  }
+
+  const masa = String(masaBerlakuInput || "").toLowerCase().trim();
+  const akhir = new Date(mulai);
+
+  let angka = 1;
+  const angkaMatch = masa.match(/(\d+)/);
+
+  if (angkaMatch) {
+    angka = Number(angkaMatch[1]);
+  }
+
+  if (
+    masa.includes("per-visit") ||
+    masa.includes("per visit") ||
+    masa.includes("visit") ||
+    masa.includes("harian") ||
+    masa.includes("1 hari")
+  ) {
+    // berlaku hari itu saja
+  } else if (masa.includes("minggu")) {
+    akhir.setDate(akhir.getDate() + (angka * 7));
+  } else if (masa.includes("bulan")) {
+    akhir.setMonth(akhir.getMonth() + angka);
+  } else if (masa.includes("tahun")) {
+    akhir.setFullYear(akhir.getFullYear() + angka);
+  } else {
+    // Kalau format masa berlaku tidak dikenali,
+    // default-nya dianggap berlaku di hari yang sama.
+  }
+
+  const mulaiText = formatTanggalIndonesia_(mulai);
+  const akhirText = formatTanggalIndonesia_(akhir);
+
+  if (isSameDate_(mulai, akhir)) {
+    return mulaiText;
+  }
+
+  return mulaiText + " - " + akhirText;
 }
 
-function normalizeKeyNumber_(value) {
-  const raw = String(value || '').trim();
+function findHeaderRow_(sheet) {
+  const maxRows = Math.min(sheet.getLastRow(), 20);
 
-  if (!raw) return '';
+  if (maxRows < 1) return 1;
 
-  const number = Number(raw);
+  const values = sheet.getRange(1, 1, maxRows, Math.min(sheet.getLastColumn(), 14)).getValues();
 
-  if (!Number.isFinite(number) || number <= 0) return '';
+  for (let i = 0; i < values.length; i++) {
+    const rowText = values[i].map(function(cell) {
+      return String(cell || "").toLowerCase().trim();
+    });
 
-  return String(Math.floor(number)).padStart(2, '0');
+    const hasTanggal = rowText.includes("tanggal");
+    const hasNama = rowText.includes("nama");
+    const hasMasaBerlaku = rowText.includes("masa berlaku");
+
+    if (hasTanggal && hasNama && hasMasaBerlaku) {
+      return i + 1;
+    }
+  }
+
+  return 1;
 }
 
-function normalizeStatus_(value) {
-  const raw = String(value || '').trim().toLowerCase();
+function isDataSheet_(sheet) {
+  const sheetName = sheet.getName();
 
-  if (raw === 'masuk') return 'Masuk';
-  if (raw === 'keluar') return 'Keluar';
+  if (sheetName.toLowerCase().includes("dashboard")) return false;
+  if (sheetName.toLowerCase().includes("template")) return false;
 
-  return '';
+  const headerRow = findHeaderRow_(sheet);
+
+  if (headerRow < 1) return false;
+
+  const header = sheet.getRange(headerRow, 1, 1, Math.min(sheet.getLastColumn(), 9)).getValues()[0];
+
+  const headerText = header.map(function(cell) {
+    return String(cell || "").toLowerCase().trim();
+  });
+
+  return (
+    headerText.includes("tanggal") &&
+    headerText.includes("nama") &&
+    headerText.includes("masa berlaku")
+  );
 }
 
-function appendLog_(sheet, payload) {
-  const timestamp = payload.timestamp || new Date();
-  const no = Math.max(sheet.getLastRow(), 1);
+function ensureMasaAktifHeaders_(sheet) {
+  const headerRow = findHeaderRow_(sheet);
 
-  sheet.appendRow([
-    no,
-    formatDateTime_(timestamp),
-    formatDate_(timestamp),
-    formatTime_(timestamp),
-    payload.customerName,
-    payload.keyNumber,
-    payload.status,
-    payload.admin
+  sheet.getRange(headerRow, COL.MULAI_MEMBER, 1, EXTRA_HEADERS.length).setValues([
+    EXTRA_HEADERS
   ]);
+
+  const headerRange = sheet.getRange(headerRow, COL.MULAI_MEMBER, 1, EXTRA_HEADERS.length);
+  headerRange.setFontWeight("bold");
+  headerRange.setBackground("#d9ead3");
+  headerRange.setHorizontalAlignment("center");
 }
 
-function updateDailyRecap_(sheet, payload) {
-  setupDailyHeader_(sheet);
-  setupDailyCheckboxes_(sheet);
+function setupMasaAktifSemuaSheet() {
+  const ss = getSpreadsheet_();
+  const sheets = ss.getSheets();
 
-  if (payload.status === 'Masuk') {
-    appendDailyCheckIn_(sheet, payload);
-    return;
-  }
+  let totalSheet = 0;
 
-  if (payload.status === 'Keluar') {
-    markDailyCheckout_(sheet, payload);
-  }
+  sheets.forEach(function(sheet) {
+    if (isDataSheet_(sheet)) {
+      ensureMasaAktifHeaders_(sheet);
+      totalSheet++;
+    }
+  });
+
+  return {
+    success: true,
+    message: "Setup kolom masa aktif selesai. Total sheet diproses: " + totalSheet,
+    totalSheet: totalSheet
+  };
 }
 
-function appendDailyCheckIn_(sheet, payload) {
-  const timestamp = payload.timestamp || new Date();
+function parseSheetNameRange_(sheetName) {
+  const text = String(sheetName || "").trim();
 
-  const tanggal = formatDate_(timestamp);
-  const jamMasuk = formatTime_(timestamp);
-  const waktuMasukLengkap = formatDateTime_(timestamp);
-  const nomorHarian = getNextDailyNumber_(sheet, tanggal);
+  // Contoh:
+  // 4-8 Mei 2026
+  // 27 - 30 April 2026
+  const rangeMatch = text.match(/(\d{1,2})\s*-\s*(\d{1,2})\s+(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+(\d{4})/i);
 
-  sheet.appendRow([
-    tanggal,
-    nomorHarian,
-    payload.customerName,
-    payload.keyNumber,
-    jamMasuk,
-    waktuMasukLengkap,
-    payload.admin,
-    '',
-    false,
-    '',
-    ''
-  ]);
+  if (rangeMatch) {
+    const startDay = Number(rangeMatch[1]);
+    const endDay = Number(rangeMatch[2]);
+    const month = BULAN_INDONESIA[rangeMatch[3].toLowerCase()];
+    const year = Number(rangeMatch[4]);
 
-  const rowIndex = sheet.getLastRow();
-
-  sheet.getRange(rowIndex, 9).insertCheckboxes();
-  sheet.getRange(rowIndex, 9).setValue(false);
-}
-
-function markDailyCheckout_(sheet, payload) {
-  const timestamp = payload.timestamp || new Date();
-
-  const jamKeluar = formatTime_(timestamp);
-  const waktuKeluarLengkap = formatDateTime_(timestamp);
-
-  const rowIndex = findOpenDailyRow_(sheet, payload.keyNumber);
-
-  if (!rowIndex) {
-    throw new Error(
-      'Baris masuk untuk kunci ' + payload.keyNumber + ' belum ditemukan di REKAP_HARIAN atau sudah pernah checkout.'
-    );
+    return {
+      start: normalizeDate_(new Date(year, month, startDay)),
+      end: normalizeDate_(new Date(year, month, endDay))
+    };
   }
 
-  sheet.getRange(rowIndex, 8).setValue(jamKeluar);
-  sheet.getRange(rowIndex, 9).insertCheckboxes();
-  sheet.getRange(rowIndex, 9).setValue(true);
-  sheet.getRange(rowIndex, 10).setValue(waktuKeluarLengkap);
-  sheet.getRange(rowIndex, 11).setValue(payload.admin);
-}
+  // Contoh:
+  // 4 Mei 2026
+  const singleMatch = text.match(/(\d{1,2})\s+(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+(\d{4})/i);
 
-function findOpenDailyRow_(sheet, keyNumber) {
-  const lastRow = sheet.getLastRow();
+  if (singleMatch) {
+    const day = Number(singleMatch[1]);
+    const month = BULAN_INDONESIA[singleMatch[2].toLowerCase()];
+    const year = Number(singleMatch[3]);
 
-  if (lastRow < 2) {
-    return null;
+    const date = normalizeDate_(new Date(year, month, day));
+
+    return {
+      start: date,
+      end: date
+    };
   }
 
-  const values = sheet.getRange(2, 1, lastRow - 1, DAILY_HEADERS.length).getValues();
+  return null;
+}
 
-  for (let i = values.length - 1; i >= 0; i--) {
-    const row = values[i];
+function findSheetForTanggal_(tanggalInput) {
+  const ss = getSpreadsheet_();
+  const targetDate = parseDateFlexible_(tanggalInput);
 
-    const rowKunci = normalizeKeyNumber_(row[3]) || cleanText_(row[3]);
-    const sudahKeluar = row[8] === true;
+  if (!targetDate) {
+    throw new Error("Tanggal input tidak valid.");
+  }
 
-    if (rowKunci === keyNumber && !sudahKeluar) {
-      return i + 2;
+  const sheets = ss.getSheets();
+
+  for (let i = 0; i < sheets.length; i++) {
+    const sheet = sheets[i];
+    const range = parseSheetNameRange_(sheet.getName());
+
+    if (!range) continue;
+
+    if (
+      targetDate.getTime() >= range.start.getTime() &&
+      targetDate.getTime() <= range.end.getTime()
+    ) {
+      return sheet;
     }
   }
 
   return null;
 }
 
-function getNextDailyNumber_(sheet, tanggal) {
-  const lastRow = sheet.getLastRow();
-
-  if (lastRow < 2) {
-    return 1;
-  }
-
-  const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-
-  let count = 0;
-
-  values.forEach(function (row) {
-    const rowTanggal = stringifyCell_(row[0]);
-
-    if (rowTanggal === tanggal) {
-      count++;
+function isRowEmptyExceptDate_(row) {
+  for (let i = 1; i < 9; i++) {
+    if (String(row[i] || "").trim() !== "") {
+      return false;
     }
-  });
-
-  return count + 1;
-}
-
-function updateKey_(sheet, payload) {
-  const record = getKeyRecord_(sheet, payload.keyNumber);
-  const rowIndex = record.rowIndex || appendKeyRow_(sheet, payload.keyNumber);
-  const nowText = formatDateTime_(new Date());
-
-  if (payload.status === 'Masuk') {
-    sheet.getRange(rowIndex, 1, 1, KEY_HEADERS.length).setValues([[
-      payload.keyNumber,
-      'Dipakai',
-      payload.customerName,
-      formatDateTime_(payload.timestamp || new Date()),
-      nowText
-    ]]);
-  } else {
-    sheet.getRange(rowIndex, 1, 1, KEY_HEADERS.length).setValues([[
-      payload.keyNumber,
-      'Kosong',
-      '',
-      '',
-      nowText
-    ]]);
   }
+
+  return true;
 }
 
-function appendKeyRow_(sheet, keyNumber) {
-  const rowIndex = sheet.getLastRow() + 1;
+function hasAnyData_(row) {
+  for (let i = 0; i < row.length; i++) {
+    if (String(row[i] || "").trim() !== "") {
+      return true;
+    }
+  }
 
-  sheet.getRange(rowIndex, 1, 1, KEY_HEADERS.length).setValues([[
-    keyNumber,
-    'Kosong',
-    '',
-    '',
-    ''
-  ]]);
-
-  return rowIndex;
+  return false;
 }
 
-function getKeyRecord_(sheet, keyNumber) {
-  const lastRow = sheet.getLastRow();
+function findInsertRowForDate_(sheet, tanggalInput) {
+  const targetDate = parseDateFlexible_(tanggalInput);
+  const headerRow = findHeaderRow_(sheet);
+  const lastRow = Math.max(sheet.getLastRow(), headerRow + 1);
 
-  if (lastRow < 2) {
+  const values = sheet.getRange(headerRow + 1, 1, lastRow - headerRow, Math.max(sheet.getLastColumn(), 14)).getValues();
+
+  let currentDate = null;
+  let foundTarget = false;
+  let firstBlankDateOnlyRow = null;
+  let lastRowInTarget = null;
+  let nextDateRow = null;
+
+  for (let i = 0; i < values.length; i++) {
+    const actualRow = headerRow + 1 + i;
+    const row = values[i];
+
+    const parsedDate = parseDateFlexible_(row[0]);
+
+    if (parsedDate) {
+      if (foundTarget && !isSameDate_(parsedDate, targetDate)) {
+        nextDateRow = actualRow;
+        break;
+      }
+
+      currentDate = parsedDate;
+
+      if (isSameDate_(currentDate, targetDate)) {
+        foundTarget = true;
+
+        if (isRowEmptyExceptDate_(row)) {
+          firstBlankDateOnlyRow = actualRow;
+        }
+      }
+    }
+
+    if (foundTarget && currentDate && isSameDate_(currentDate, targetDate)) {
+      if (hasAnyData_(row)) {
+        lastRowInTarget = actualRow;
+      }
+    }
+  }
+
+  if (firstBlankDateOnlyRow) {
     return {
-      rowIndex: null,
-      keyNumber: keyNumber,
-      status: 'Kosong',
-      customerName: '',
-      checkInTime: '',
-      updatedAt: ''
+      mode: "write",
+      row: firstBlankDateOnlyRow,
+      shouldWriteDate: true
     };
   }
 
-  const values = sheet.getRange(2, 1, lastRow - 1, KEY_HEADERS.length).getValues();
+  if (foundTarget && lastRowInTarget) {
+    if (nextDateRow) {
+      sheet.insertRowBefore(nextDateRow);
 
-  for (let i = 0; i < values.length; i++) {
-    const row = values[i];
-    const rowKey = normalizeKeyNumber_(row[0]);
-
-    if (rowKey === keyNumber) {
       return {
-        rowIndex: i + 2,
-        keyNumber: rowKey,
-        status: cleanText_(row[1]) || 'Kosong',
-        customerName: cleanText_(row[2]),
-        checkInTime: stringifyCell_(row[3]),
-        updatedAt: stringifyCell_(row[4])
+        mode: "write",
+        row: nextDateRow,
+        shouldWriteDate: false
       };
     }
+
+    sheet.insertRowAfter(lastRowInTarget);
+
+    return {
+      mode: "write",
+      row: lastRowInTarget + 1,
+      shouldWriteDate: false
+    };
   }
+
+  const appendRow = sheet.getLastRow() + 1;
 
   return {
-    rowIndex: null,
-    keyNumber: keyNumber,
-    status: 'Kosong',
-    customerName: '',
-    checkInTime: '',
-    updatedAt: ''
+    mode: "write",
+    row: appendRow,
+    shouldWriteDate: true
   };
 }
 
-function getKeys_() {
-  const ss = getSpreadsheet_();
-  const sheet = getOrCreateSheet_(ss, SHEET_KEYS);
+function tambahMember(data) {
+  if (!data) {
+    return {
+      success: false,
+      message: "Data kosong."
+    };
+  }
 
-  setupHeader_(sheet, KEY_HEADERS);
-  seedKeys_(sheet, MAX_KEY_NUMBER);
+  if (!data.tanggal) {
+    return {
+      success: false,
+      message: "Tanggal wajib diisi."
+    };
+  }
 
-  const lastRow = sheet.getLastRow();
+  if (!data.nama) {
+    return {
+      success: false,
+      message: "Nama wajib diisi."
+    };
+  }
 
-  if (lastRow < 2) return [];
+  const tanggalInput = data.tanggal;
+  const targetDate = parseDateFlexible_(tanggalInput);
 
-  const values = sheet.getRange(2, 1, lastRow - 1, KEY_HEADERS.length).getValues();
+  if (!targetDate) {
+    return {
+      success: false,
+      message: "Format tanggal tidak valid."
+    };
+  }
 
-  return values
-    .filter(function (row) {
-      return cleanText_(row[0]);
-    })
-    .map(function (row) {
-      return {
-        keyNumber: normalizeKeyNumber_(row[0]),
-        status: cleanText_(row[1]) || 'Kosong',
-        customerName: cleanText_(row[2]),
-        checkInTime: stringifyCell_(row[3]),
-        updatedAt: stringifyCell_(row[4])
-      };
-    });
-}
+  let sheet = findSheetForTanggal_(targetDate);
 
-function getMembers_() {
-  const ss = getSpreadsheet_();
-  const sheet = getOrCreateSheet_(ss, SHEET_MEMBERS);
+  if (!sheet) {
+    return {
+      success: false,
+      message:
+        "Sheet untuk tanggal " +
+        formatTanggalIndonesia_(targetDate) +
+        " tidak ditemukan. Buat tab mingguan dulu, contoh: 4-8 Mei 2026."
+    };
+  }
 
-  setupHeader_(sheet, MEMBER_HEADERS);
+  ensureMasaAktifHeaders_(sheet);
 
-  const lastRow = sheet.getLastRow();
-  const lastCol = Math.max(sheet.getLastColumn(), MEMBER_HEADERS.length);
+  let tanggalBerlaku = String(data.tanggalBerlaku || "").trim();
 
-  if (lastRow < 2) return [];
+  if (!tanggalBerlaku) {
+    tanggalBerlaku = buatTanggalBerlakuOtomatis_(targetDate, data.masaBerlaku);
+  }
 
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(cleanHeader_);
-  const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const masaAktif = hitungMasaAktifMember_(tanggalBerlaku);
 
-  const idx = {
-    memberId: findHeaderIndex_(headers, ['no', 'id member', 'id', 'no member', 'nomor member', 'kode member']),
-    memberName: findHeaderIndex_(headers, ['nama member', 'nama', 'name', 'member']),
-    status: findHeaderIndex_(headers, ['status', 'status member', 'tipe member']),
-    registeredAt: findHeaderIndex_(headers, ['tanggal daftar', 'tanggal', 'join date', 'mulai member', 'tanggal mulai']),
-    createdBy: findHeaderIndex_(headers, ['diinput oleh', 'admin', 'input oleh', 'pegawai']),
-    updatedAt: findHeaderIndex_(headers, ['update terakhir', 'updated at', 'last update', 'terakhir update'])
+  const insertInfo = findInsertRowForDate_(sheet, targetDate);
+
+  const rowValues = [
+    insertInfo.shouldWriteDate ? formatTanggalIndonesia_(targetDate) : "",
+    data.nama || "",
+    data.noAnggota || "",
+    data.masaBerlaku || "",
+    tanggalBerlaku,
+    data.keterangan || "",
+    data.jumlah || "",
+    data.cetakKartu || "",
+    data.noKuitansi || "",
+    masaAktif.mulaiMember,
+    masaAktif.expiredMember,
+    masaAktif.sisaHari,
+    masaAktif.statusMasaAktif,
+    masaAktif.keteranganMasaAktif
+  ];
+
+  sheet.getRange(insertInfo.row, 1, 1, rowValues.length).setValues([rowValues]);
+
+  const masaRange = sheet.getRange(insertInfo.row, COL.MULAI_MEMBER, 1, EXTRA_HEADERS.length);
+  masaRange.setBackground("#f6fff2");
+
+  return {
+    success: true,
+    message:
+      "Member berhasil ditambahkan ke sheet " +
+      sheet.getName() +
+      ". " +
+      masaAktif.keteranganMasaAktif,
+    sheetName: sheet.getName(),
+    row: insertInfo.row,
+    masaAktif: masaAktif
   };
+}
 
-  return values
-    .map(function (row, index) {
-      const fallbackNo = String(index + 1).padStart(3, '0');
-      const memberId = getRowValue_(row, idx.memberId) || fallbackNo;
-      const memberName = getRowValue_(row, idx.memberName);
+function getRekapMember() {
+  const ss = getSpreadsheet_();
+  const sheets = ss.getSheets();
 
-      return {
-        memberId: memberId,
-        memberName: memberName,
-        status: getRowValue_(row, idx.status) || 'Lifetime',
-        registeredAt: stringifyCell_(getRawRowValue_(row, idx.registeredAt)),
-        createdBy: getRowValue_(row, idx.createdBy),
-        updatedAt: stringifyCell_(getRawRowValue_(row, idx.updatedAt))
+  const result = [];
+  const grouped = {};
+
+  sheets.forEach(function(sheet) {
+    if (!isDataSheet_(sheet)) return;
+
+    ensureMasaAktifHeaders_(sheet);
+
+    const headerRow = findHeaderRow_(sheet);
+    const lastRow = sheet.getLastRow();
+
+    if (lastRow <= headerRow) return;
+
+    const values = sheet.getRange(headerRow + 1, 1, lastRow - headerRow, Math.max(sheet.getLastColumn(), 14)).getValues();
+
+    let currentDate = null;
+
+    values.forEach(function(row, index) {
+      const actualRow = headerRow + 1 + index;
+
+      const tanggalDiKolomA = parseDateFlexible_(row[0]);
+
+      if (tanggalDiKolomA) {
+        currentDate = tanggalDiKolomA;
+      }
+
+      const nama = row[COL.NAMA - 1];
+
+      if (!currentDate || !nama) return;
+
+      const tanggalBerlaku = row[COL.TANGGAL_BERLAKU - 1];
+
+      const masaAktif = hitungMasaAktifMember_(tanggalBerlaku);
+
+      const tanggalKey = formatDateKey_(currentDate);
+      const tanggalDisplay = formatTanggalIndonesia_(currentDate);
+
+      if (!grouped[tanggalKey]) {
+        grouped[tanggalKey] = {
+          tanggalKey: tanggalKey,
+          tanggalDisplay: tanggalDisplay,
+          total: 0,
+          members: []
+        };
+      }
+
+      const member = {
+        sheetName: sheet.getName(),
+        rowNumber: actualRow,
+        tanggalKey: tanggalKey,
+        tanggalDisplay: tanggalDisplay,
+        nama: row[COL.NAMA - 1] || "",
+        noAnggota: row[COL.NO_ANGGOTA - 1] || "",
+        masaBerlaku: row[COL.MASA_BERLAKU - 1] || "",
+        tanggalBerlaku: tanggalBerlaku || "",
+        keterangan: row[COL.KETERANGAN - 1] || "",
+        jumlah: row[COL.JUMLAH - 1] || "",
+        cetakKartu: row[COL.CETAK_KARTU - 1] || "",
+        noKuitansi: row[COL.NO_KUITANSI - 1] || "",
+        mulaiMember: masaAktif.mulaiMember,
+        expiredMember: masaAktif.expiredMember,
+        sisaHari: masaAktif.sisaHari,
+        statusMasaAktif: masaAktif.statusMasaAktif,
+        keteranganMasaAktif: masaAktif.keteranganMasaAktif
       };
-    })
-    .filter(function (item) {
-      return item.memberName || item.memberId;
+
+      grouped[tanggalKey].members.push(member);
+      grouped[tanggalKey].total++;
+      result.push(member);
     });
+  });
+
+  const groups = Object.values(grouped).sort(function(a, b) {
+    return new Date(a.tanggalKey) - new Date(b.tanggalKey);
+  });
+
+  return {
+    success: true,
+    data: result,
+    groups: groups,
+    total: result.length
+  };
 }
 
-function getLogs_() {
+function updateMasaAktifSemuaData() {
   const ss = getSpreadsheet_();
-  const sheet = getOrCreateSheet_(ss, SHEET_LOG);
+  const sheets = ss.getSheets();
 
-  setupHeader_(sheet, LOG_HEADERS);
+  let totalSheet = 0;
+  let totalRowUpdated = 0;
 
-  const lastRow = sheet.getLastRow();
+  sheets.forEach(function(sheet) {
+    if (!isDataSheet_(sheet)) return;
 
-  if (lastRow < 2) return [];
+    ensureMasaAktifHeaders_(sheet);
 
-  const numberOfRows = Math.min(lastRow - 1, 50);
-  const startRow = Math.max(2, lastRow - numberOfRows + 1);
-  const values = sheet.getRange(startRow, 1, numberOfRows, LOG_HEADERS.length).getValues();
+    const headerRow = findHeaderRow_(sheet);
+    const lastRow = sheet.getLastRow();
 
-  return values
-    .map(function (row) {
-      return {
-        no: row[0],
-        waktuLengkap: stringifyCell_(row[1]),
-        tanggal: stringifyCell_(row[2]),
-        jam: stringifyCell_(row[3]),
-        nama: cleanText_(row[4]),
-        noKunci: normalizeKeyNumber_(row[5]) || cleanText_(row[5]),
-        status: cleanText_(row[6]),
-        admin: cleanText_(row[7])
-      };
-    })
-    .filter(function (item) {
-      return item.nama || item.noKunci || item.status;
-    })
-    .reverse();
+    if (lastRow <= headerRow) return;
+
+    const numRows = lastRow - headerRow;
+    const values = sheet.getRange(headerRow + 1, 1, numRows, Math.max(sheet.getLastColumn(), 14)).getValues();
+
+    const output = [];
+    let hasData = false;
+
+    values.forEach(function(row) {
+      const nama = row[COL.NAMA - 1];
+      const tanggalBerlaku = row[COL.TANGGAL_BERLAKU - 1];
+
+      if (nama && tanggalBerlaku) {
+        const masaAktif = hitungMasaAktifMember_(tanggalBerlaku);
+
+        output.push([
+          masaAktif.mulaiMember,
+          masaAktif.expiredMember,
+          masaAktif.sisaHari,
+          masaAktif.statusMasaAktif,
+          masaAktif.keteranganMasaAktif
+        ]);
+
+        hasData = true;
+        totalRowUpdated++;
+      } else {
+        output.push(["", "", "", "", ""]);
+      }
+    });
+
+    if (hasData) {
+      sheet.getRange(headerRow + 1, COL.MULAI_MEMBER, output.length, EXTRA_HEADERS.length).setValues(output);
+      totalSheet++;
+    }
+  });
+
+  return {
+    success: true,
+    message:
+      "Update masa aktif selesai. Total sheet: " +
+      totalSheet +
+      ", total baris diperbarui: " +
+      totalRowUpdated,
+    totalSheet: totalSheet,
+    totalRowUpdated: totalRowUpdated
+  };
 }
 
-function getDailyRecap_() {
-  const ss = getSpreadsheet_();
-  const sheet = getOrCreateSheet_(ss, SHEET_DAILY);
+function testHitungMasaAktif() {
+  const contoh1 = hitungMasaAktifMember_("4 Mei 2026 - 4 Juni 2026");
+  const contoh2 = hitungMasaAktifMember_("4 Mei 2026");
 
-  setupDailyHeader_(sheet);
-  setupDailyCheckboxes_(sheet);
-
-  const lastRow = sheet.getLastRow();
-
-  if (lastRow < 2) return [];
-
-  const numberOfRows = Math.min(lastRow - 1, 200);
-  const startRow = Math.max(2, lastRow - numberOfRows + 1);
-  const values = sheet.getRange(startRow, 1, numberOfRows, DAILY_HEADERS.length).getValues();
-
-  return values
-    .map(function (row) {
-      return {
-        tanggal: stringifyCell_(row[0]),
-        no: row[1],
-        nama: cleanText_(row[2]),
-        noKunci: normalizeKeyNumber_(row[3]) || cleanText_(row[3]),
-        jamMasuk: stringifyCell_(row[4]),
-        waktuMasukLengkap: stringifyCell_(row[5]),
-        adminMasuk: cleanText_(row[6]),
-        jamKeluar: stringifyCell_(row[7]),
-        sudahKeluar: row[8] === true,
-        waktuKeluarLengkap: stringifyCell_(row[9]),
-        adminKeluar: cleanText_(row[10])
-      };
-    })
-    .filter(function (item) {
-      return item.nama || item.noKunci;
-    })
-    .reverse();
-}
-
-function cleanHeader_(value) {
-  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function findHeaderIndex_(headers, aliases) {
-  for (let i = 0; i < aliases.length; i++) {
-    const index = headers.indexOf(aliases[i]);
-    if (index !== -1) return index;
-  }
-
-  return -1;
-}
-
-function getRawRowValue_(row, index) {
-  return index >= 0 ? row[index] : '';
-}
-
-function getRowValue_(row, index) {
-  return cleanText_(getRawRowValue_(row, index));
-}
-
-function stringifyCell_(value) {
-  if (value instanceof Date) {
-    return formatDateTime_(value);
-  }
-
-  return cleanText_(value);
-}
-
-function formatDate_(date) {
-  return Utilities.formatDate(date, TIMEZONE, 'dd/MM/yyyy');
-}
-
-function formatTime_(date) {
-  return Utilities.formatDate(date, TIMEZONE, 'HH:mm:ss');
-}
-
-function formatDateTime_(date) {
-  return Utilities.formatDate(date, TIMEZONE, 'dd/MM/yyyy HH:mm:ss');
-}
-
-function autoResize_(sheet, length) {
-  for (let i = 1; i <= length; i++) {
-    sheet.autoResizeColumn(i);
-  }
-}
-
-function respondJson_(callback, payload) {
-  const json = JSON.stringify(payload);
-
-  if (callback) {
-    const safeCallback = String(callback).replace(/[^a-zA-Z0-9_.$]/g, '');
-
-    return ContentService
-      .createTextOutput(safeCallback + '(' + json + ');')
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
-  }
-
-  return ContentService
-    .createTextOutput(json)
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function respondPostMessage_(payload) {
-  const safeJson = JSON.stringify(payload).replace(/</g, '\\u003c');
-
-  const html = '<!doctype html><html><body><script>' +
-    'window.parent.postMessage({source:"sistem-gym-backend",payload:' + safeJson + '},"*");' +
-    '</script></body></html>';
-
-  return HtmlService
-    .createHtmlOutput(html)
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  Logger.log(contoh1);
+  Logger.log(contoh2);
 }
